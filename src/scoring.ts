@@ -40,6 +40,14 @@ const ALWAYS_EXCLUDE_TITLE_TERMS = [
   "co-founder",
   "cofounder",
   "founding",
+  "no longer accepting applications",
+  "no longer available",
+  "applications closed",
+  "application closed",
+  "position filled",
+  "job expired",
+  "role expired",
+  "no longer hiring",
 ];
 
 export function isBlacklisted(config: SniperConfig, listing: ListingCandidate): boolean {
