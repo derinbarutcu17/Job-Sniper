@@ -24,7 +24,7 @@ export function draftOutreach(baseDir: string, jobId: number): string {
     "If useful, I can share a concise portfolio and discuss how I can help ship quickly.",
     "",
     `${close},`,
-    "Derin",
+    "[Your Name]",
   ].join("\n");
 
   saveOutreachDraft(db, jobId, draft);
