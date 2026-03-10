@@ -1,24 +1,46 @@
 ---
-name: claw-job-sniper
-description: CV-based job discovery tool. Scans feeds, ranks them against profile/cv.md, and manages a blacklist of companies.
+name: sniper
+description: "Istanbul-first job intelligence for design and AI coding roles. Use /sniper with subcommands like onboard, run, digest, draft, companies, and sheet sync."
+user-invocable: true
+metadata: { "openclaw": { "requires": { "bins": ["node", "npm"] } } }
 ---
 
-# Claw Job Sniper 🎯
+# Sniper
 
-A utility for autonomous job hunting based on a local CV.
+Use this skill when the user wants to hunt for jobs, companies, and public hiring contacts.
 
-## Commands
+## Command surface
 
-- `!sniper run`: Scans configured sources and ranks jobs against `profile/cv.md`.
-- `!sniper digest`: Shows a list of the top 5 job matches.
-- `!sniper draft <id>`: Generates a personalized outreach pitch for a specific job.
-- `!sniper blacklist <company>`: Adds a company to the exclusion list.
-- `!sniper serve`: Launches the dashboard at `localhost:3000`.
+Run the local CLI via:
 
-## Configuration
+```bash
+node {baseDir}/scripts/run-sniper.mjs <subcommand> [args...]
+```
 
-Modify `config.json` to manage:
-- RSS feeds (`sources`)
-- Keywords (`search`)
-- Blacklisted companies (`blacklist`)
-- Automation thresholds
+Supported subcommands:
+
+- `onboard <text-or-path>`
+- `run`
+- `digest [limit]`
+- `draft <job-id>`
+- `blacklist add <term>`
+- `sheet sync`
+- `sheet pull`
+- `companies [limit]`
+
+## Behavior rules
+
+- Keep the local SQLite database as the source of truth.
+- Prioritize Istanbul and Turkish listings first, but keep relevant global remote roles too.
+- Collect only public contacts and public company pages.
+- Never send applications or email anyone automatically.
+- If the user asks to sync or pull Google Sheets data, use the configured service account env vars.
+
+## Environment
+
+Optional env vars for Google Sheets:
+
+- `SNIPER_GOOGLE_SERVICE_ACCOUNT_PATH`
+- `SNIPER_GOOGLE_SERVICE_ACCOUNT_JSON`
+- `SNIPER_GOOGLE_SHEET_ID`
+- `SNIPER_GOOGLE_FOLDER_ID`

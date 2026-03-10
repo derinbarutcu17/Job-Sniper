@@ -1,62 +1,49 @@
-# Claw Job Sniper 🎯
+# Claw Job Sniper
 
-**The autonomous recruiter that lives in your workspace.**
+`claw-job-sniper` is now a modern OpenClaw skill built around a Node 24 TypeScript CLI.
 
-## What is this?
-**Claw Job Sniper** is a universal autonomous headhunter for **OpenClaw**. 
+It keeps a local SQLite database, discovers Istanbul-first design and AI coding roles across the public web and common ATS platforms, enriches companies and public contacts, and syncs editable results to Google Sheets.
 
-It works for **any industry**—not just tech. Whether you are a designer, a marketer, a writer, or an engineer, this bot:
-1.  **Learns your profile** by reading your CV.
-2.  **Scouts your specific sources** (RSS feeds you configure).
-3.  **Filters noise** using your custom keywords.
-4.  **Drafts applications** tailored to the roles you want.
+## OpenClaw usage
 
-It automates the boring part of job hunting, so you can focus on the interviews.
+The primary command surface is:
 
----
-
-## 🛠 How it works
-Under the hood, it's a configurable engine running on the OpenClaw runtime (`bun`).
-- **Universal Search:** You define the sources (RSS feeds from any job board).
-- **Custom Filters:** You define the keywords that matter for *your* career.
-- **Privacy:** It runs **locally** on your machine. Your CV and data never leave your computer.
-
----
-
-## 🚀 How to Install
-(Requires [OpenClaw](https://github.com/openclaw/openclaw) to be installed).
-
-### 1. Install the Skill
-Run this command in your OpenClaw session (or let your agent do it):
-```bash
-!skill install https://github.com/derinbarutcu17/claw-job-sniper
+```text
+/sniper onboard <cv text or file path>
+/sniper run
+/sniper digest
+/sniper draft <job-id>
+/sniper blacklist add <company-or-keyword>
+/sniper sheet sync
+/sniper sheet pull
+/sniper companies
 ```
 
-### 2. Onboard
-Once installed, introduce yourself:
-```bash
-!sniper onboard
-```
-*(You can paste your CV text or attach a PDF/Markdown file).*
+Older `!sniper ...` examples are deprecated. If a surface does not expose native skill commands, use `/skill sniper ...`.
 
-### 3. Hunt
-Tell it to go work:
+## Local setup
+
 ```bash
-!sniper run
+npm install
+npm run test
 ```
 
----
+The runtime keeps its state in:
 
-## 🗣️ Commands
+- `profile/cv.md`
+- `profile/profile.json`
+- `data/sniper.db`
 
-| Command | Action |
-| :--- | :--- |
-| `!sniper onboard` | **Start here.** Sync your CV so the bot knows you. |
-| `!sniper run` | **The Hunt.** Scans for new jobs immediately. |
-| `!sniper digest` | **The Results.** Shows the top 5 matches found. |
-| `!sniper draft [ID]` | **The Closer.** Writes a custom email for a specific job. |
-| `!sniper blacklist` | **The Shield.** Blocks a company forever. |
+## Google Sheets configuration
 
----
+For live Sheets sync, set either:
 
-*Built by Derin Barutçu — Istanbul/Berlin, 2026.*
+- `SNIPER_GOOGLE_SERVICE_ACCOUNT_PATH`
+- `SNIPER_GOOGLE_SERVICE_ACCOUNT_JSON`
+
+Optional:
+
+- `SNIPER_GOOGLE_SHEET_ID`
+- `SNIPER_GOOGLE_FOLDER_ID`
+
+On first sync, the tool creates a spreadsheet named `Claw Job Sniper` if no spreadsheet ID is configured or stored.
