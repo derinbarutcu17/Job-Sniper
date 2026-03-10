@@ -1,21 +1,84 @@
 {
   "search": {
-    "include_keywords": ["React", "TypeScript", "Node.js", "AI", "Design", "Figma", "UI", "Frontend", "Agent"],
-    "exclude_keywords": ["Senior", "Lead", "Principal", "Staff", "Manager", "VP", "Head of"],
-    "locations": ["Berlin", "Remote", "Istanbul"],
-    "min_match_threshold": 30
+    "maxResultsPerQuery": 6,
+    "maxQueriesPerLane": 6,
+    "minScoreThreshold": 35,
+    "browserFallback": false,
+    "priorityCities": ["Istanbul", "İstanbul"],
+    "priorityCountries": ["Turkey", "Türkiye"]
   },
-  "sources": [
-    { "name": "Berlin Startup Jobs", "url": "https://berlinstartupjobs.com/feed/", "type": "rss" },
-    { "name": "BSJ Engineering", "url": "https://berlinstartupjobs.com/engineering/feed/", "type": "rss" },
-    { "name": "BSJ Design", "url": "https://berlinstartupjobs.com/design/feed/", "type": "rss" }
-  ],
-  "automation": {
-    "auto_draft_threshold": 85,
-    "telegram_notifications": true
+  "lanes": {
+    "design_jobs": {
+      "enabled": true,
+      "queries": {
+        "tr": [
+          "istanbul ui ux tasarim is ilani",
+          "istanbul urun tasarimcisi figma kariyer",
+          "turkiye tasarim sistemleri product designer remote"
+        ],
+        "en": [
+          "Istanbul product designer figma jobs",
+          "Turkey UX UI designer careers",
+          "remote product designer design systems jobs"
+        ]
+      },
+      "keywords": ["figma", "product design", "ux", "ui", "tasarım", "design systems", "visual design"]
+    },
+    "ai_coding_jobs": {
+      "enabled": true,
+      "queries": {
+        "tr": [
+          "istanbul yapay zeka muhendisi is ilani",
+          "turkiye llm engineer remote",
+          "istanbul agent engineer typescript python kariyer"
+        ],
+        "en": [
+          "Istanbul AI engineer TypeScript jobs",
+          "remote LLM engineer developer tools jobs",
+          "agent engineer automation node python jobs"
+        ]
+      },
+      "keywords": ["ai engineer", "llm", "agent", "automation", "typescript", "node", "python", "developer tools"]
+    },
+    "company_watch": {
+      "enabled": true,
+      "queries": {
+        "tr": ["istanbul design studio careers", "istanbul ai startup careers"],
+        "en": ["Istanbul AI startup careers", "Turkey product design company careers"]
+      },
+      "keywords": ["careers", "jobs", "hiring", "team", "designer", "ai"]
+    }
+  },
+  "sources": {
+    "rss": [
+      {
+        "name": "Berlin Startup Jobs Design",
+        "url": "https://berlinstartupjobs.com/design/feed/"
+      },
+      {
+        "name": "Berlin Startup Jobs Engineering",
+        "url": "https://berlinstartupjobs.com/engineering/feed/"
+      }
+    ],
+    "atsBoards": []
   },
   "blacklist": {
     "companies": [],
-    "keywords": ["Senior", "Lead", "Principal", "Staff", "Manager", "VP", "Head of"]
+    "keywords": ["senior", "principal", "staff", "manager", "head of", "director", "vp", "founder", "co-founder", "cofounder", "founding"],
+    "lanes": {
+      "design_jobs": [],
+      "ai_coding_jobs": [],
+      "company_watch": []
+    }
+  },
+  "sheets": {
+    "spreadsheetId": "",
+    "createIfMissing": true,
+    "folderId": "",
+    "tabs": {
+      "jobs": "Jobs",
+      "companies": "Companies",
+      "contacts": "Contacts"
+    }
   }
 }
