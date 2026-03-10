@@ -122,7 +122,6 @@ function jobRows(db: ReturnType<typeof openDatabase>["db"]): Row[] {
     .prepare("SELECT * FROM jobs WHERE status != 'excluded' ORDER BY score DESC, updated_at DESC")
     .all() as JobRecord[];
   return jobs.map((job) => ({
-    canonical_key: job.canonical_key,
     title: job.title,
     company_name: job.company_name,
     lane: job.lane,
@@ -138,11 +137,17 @@ function jobRows(db: ReturnType<typeof openDatabase>["db"]): Row[] {
 }
 
 function companyRows(db: ReturnType<typeof openDatabase>["db"]): Row[] {
-  const companies = db.prepare("SELECT * FROM companies ORDER BY updated_at DESC").all() as Array<
-    Record<string, unknown>
-  >;
+  const companies = db
+    .prepare(
+      `SELECT * FROM companies
+       WHERE lower(location) LIKE '%turkey%'
+          OR lower(location) LIKE '%türkiye%'
+          OR lower(location) LIKE '%istanbul%'
+       ORDER BY name COLLATE NOCASE ASC`,
+    )
+    .all() as Array<Record<string, unknown>>;
+
   return companies.map((company) => ({
-    canonical_key: String(company.canonical_key ?? ""),
     name: String(company.name ?? ""),
     domain: String(company.domain ?? ""),
     location: String(company.location ?? ""),
@@ -150,36 +155,39 @@ function companyRows(db: ReturnType<typeof openDatabase>["db"]): Row[] {
     careers_url: String(company.careers_url ?? ""),
     linkedin_url: String(company.linkedin_url ?? ""),
     description: String(company.description ?? ""),
-    public_contacts: String(company.public_contacts ?? "[]"),
-    source_urls: String(company.source_urls ?? "[]"),
-    last_seen_at: String(company.last_seen_at ?? ""),
     updated_at: String(company.updated_at ?? ""),
   }));
 }
 
 function contactRows(db: ReturnType<typeof openDatabase>["db"]): Row[] {
-  const contacts = db.prepare("SELECT * FROM contacts ORDER BY updated_at DESC").all() as Array<
-    Record<string, unknown>
-  >;
+  const contacts = db
+    .prepare(
+      `SELECT c.name AS company_name, ct.name, ct.title, ct.email, ct.source_url, ct.linkedin_url, ct.notes, ct.updated_at
+       FROM contacts ct
+       LEFT JOIN companies c ON c.id = ct.company_id
+       WHERE lower(ifnull(c.location, '')) LIKE '%turkey%'
+          OR lower(ifnull(c.location, '')) LIKE '%türkiye%'
+          OR lower(ifnull(c.location, '')) LIKE '%istanbul%'
+       ORDER BY c.name COLLATE NOCASE ASC, ct.updated_at DESC`,
+    )
+    .all() as Array<Record<string, unknown>>;
+
   return contacts.map((contact) => ({
-    canonical_key: String(contact.canonical_key ?? ""),
-    company_id: String(contact.company_id ?? ""),
+    company_name: String(contact.company_name ?? ""),
     name: String(contact.name ?? ""),
     title: String(contact.title ?? ""),
     email: String(contact.email ?? ""),
     source_url: String(contact.source_url ?? ""),
     linkedin_url: String(contact.linkedin_url ?? ""),
-    kind: String(contact.kind ?? ""),
     notes: String(contact.notes ?? ""),
-    last_seen_at: String(contact.last_seen_at ?? ""),
     updated_at: String(contact.updated_at ?? ""),
   }));
 }
 
 function mergeManualColumns(localRows: Row[], existingRows: Row[]): Row[] {
-  const existingByKey = new Map(existingRows.map((row) => [row.canonical_key, row]));
+  const existingByKey = new Map(existingRows.map((row) => [row.url || row.title, row]));
   return localRows.map((row) => {
-    const existing = existingByKey.get(row.canonical_key);
+    const existing = existingByKey.get(row.url || row.title);
     if (!existing) {
       return row;
     }
@@ -235,10 +243,17 @@ export async function pullSheets(baseDir: string, gateway: SheetGateway = new Go
 
   const rows = await gateway.readSheet(spreadsheetId, process.env.SNIPER_JOBS_TAB || "Jobs");
   for (const row of rows) {
-    if (!row.canonical_key) {
+    let canonicalKey = row.canonical_key;
+    if (!canonicalKey && row.url) {
+      const found = db
+        .prepare("SELECT canonical_key FROM jobs WHERE url = ? LIMIT 1")
+        .get(row.url) as { canonical_key?: string } | undefined;
+      canonicalKey = found?.canonical_key;
+    }
+    if (!canonicalKey) {
       continue;
     }
-    updateJobManualFields(db, row.canonical_key, {
+    updateJobManualFields(db, canonicalKey, {
       manual_status: row.manual_status,
       owner_notes: row.owner_notes,
       priority: row.priority,
