@@ -134,14 +134,6 @@ function jobRows(db: ReturnType<typeof openDatabase>["db"]): Row[] {
     work_model: job.work_model,
     url: job.url,
     source: job.source,
-    draft_summary: job.outreach_draft,
-    manual_status: job.manual_status,
-    owner_notes: job.owner_notes,
-    priority: job.priority,
-    outreach_state: job.outreach_state,
-    manual_contact_override: job.manual_contact_override,
-    last_seen_at: job.last_seen_at,
-    updated_at: job.updated_at,
   }));
 }
 
