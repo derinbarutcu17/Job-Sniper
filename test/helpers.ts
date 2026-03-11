@@ -24,6 +24,9 @@ export function makeFetchStub(routes: Record<string, { body: string; status?: nu
   return {
     fetch: async (input) => {
       const route = routes[input];
+      if (!route && String(input).startsWith("https://html.duckduckgo.com/html/?q=")) {
+        return response("<html><body></body></html>", 200);
+      }
       if (!route) {
         throw new Error(`Missing route for ${input}`);
       }

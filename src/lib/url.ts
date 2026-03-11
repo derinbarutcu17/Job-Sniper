@@ -5,7 +5,10 @@ export function normalizeUrl(rawUrl: string): string {
     const url = new URL(rawUrl);
     url.hash = "";
     for (const key of [...url.searchParams.keys()]) {
-      if (key.startsWith("utm_") || ["gh_jid", "gh_src", "source", "ref"].includes(key)) {
+      if (
+        key.startsWith("utm_") ||
+        ["gh_jid", "gh_src", "source", "ref", "referrer", "trk", "fbclid", "gclid"].includes(key)
+      ) {
         url.searchParams.delete(key);
       }
     }
@@ -31,6 +34,14 @@ export function canonicalJobKey(url: string, externalId: string, title: string, 
     return `job:${slugify(normalizeUrl(url))}`;
   }
   return `job:${slugify(`${company}-${title}`)}`;
+}
+
+export function domainTitleFingerprint(domain: string, title: string): string {
+  return `${slugify(domain)}:${slugify(title)}`;
+}
+
+export function sourceFingerprint(url: string, title: string, snippet: string): string {
+  return slugify(`${normalizeUrl(url)}::${title}::${snippet}`);
 }
 
 export function canonicalCompanyKey(name: string, domain: string): string {

@@ -1,46 +1,60 @@
 import fs from "node:fs";
 import path from "node:path";
 import { ensureDir } from "./lib/paths.js";
-import type { SniperConfig } from "./types.js";
+import type { SearchLane, SniperConfig } from "./types.js";
 
-const defaultConfig: SniperConfig = {
+export const defaultConfig: SniperConfig = {
   search: {
-    maxResultsPerQuery: 6,
-    maxQueriesPerLane: 6,
-    minScoreThreshold: 35,
+    maxResultsPerQuery: 8,
+    maxQueriesPerLane: 8,
+    minScoreThreshold: 45,
     browserFallback: false,
+    searchProviderConcurrency: 4,
+    pageFetchConcurrency: 6,
+    maxPagesPerDomainPerRun: 10,
+    retries: 2,
+    timeoutMs: 10000,
     priorityCities: ["Istanbul", "İstanbul"],
     priorityCountries: ["Turkey", "Türkiye"],
+    remoteScopes: ["remote", "hybrid"],
   },
   lanes: {
     design_jobs: {
       enabled: true,
       queries: {
         tr: [
+          "istanbul urun tasarimcisi kariyer",
           "istanbul ui ux tasarim is ilani",
-          "istanbul urun tasarimcisi figma kariyer",
-          "turkiye tasarim sistemleri product designer remote",
+          "turkiye figma design systems kariyer",
         ],
         en: [
-          "Istanbul product designer figma jobs",
+          "Istanbul product designer jobs",
           "Turkey UX UI designer careers",
-          "remote product designer design systems jobs",
+          "design engineer figma react jobs",
         ],
       },
-      keywords: ["figma", "product design", "ui", "ux", "tasarım", "design system", "visual design"],
+      keywords: [
+        "product designer",
+        "ux",
+        "ui",
+        "figma",
+        "design systems",
+        "creative technologist",
+        "design engineer",
+      ],
     },
     ai_coding_jobs: {
       enabled: true,
       queries: {
         tr: [
           "istanbul yapay zeka muhendisi is ilani",
-          "turkiye llm engineer remote",
-          "istanbul agent engineer typescript python kariyer",
+          "turkiye agent engineer kariyer",
+          "turkiye typescript python ai kariyer",
         ],
         en: [
-          "Istanbul AI engineer TypeScript jobs",
-          "remote LLM engineer developer tools jobs",
-          "agent engineer automation node python jobs",
+          "Istanbul AI engineer jobs",
+          "remote LLM engineer jobs",
+          "agent engineer TypeScript Python startup",
         ],
       },
       keywords: [
@@ -52,21 +66,24 @@ const defaultConfig: SniperConfig = {
         "node",
         "python",
         "developer tools",
+        "creative automation",
       ],
     },
     company_watch: {
       enabled: true,
       queries: {
         tr: [
-          "istanbul design studio careers",
           "istanbul ai startup careers",
+          "istanbul design studio team careers",
+          "turkiye genai startup hiring",
         ],
         en: [
           "Istanbul AI startup careers",
-          "Turkey product design company careers",
+          "Turkey product design startup team",
+          "creative AI startup remote careers",
         ],
       },
-      keywords: ["careers", "jobs", "team", "hiring", "designer", "ai"],
+      keywords: ["careers", "jobs", "hiring", "team", "startup", "founding", "series a", "seed"],
     },
   },
   sources: {
@@ -78,7 +95,9 @@ const defaultConfig: SniperConfig = {
   },
   blacklist: {
     companies: [],
-    keywords: ["senior", "principal", "staff", "manager", "head of", "director", "vp", "founder", "co-founder", "cofounder", "founding"],
+    keywords: ["account executive", "sales", "gtm", "performance marketing", "chief of staff", "cto", "cfo"],
+    titleTerms: ["senior", "lead", "manager", "director", "head", "vp", "principal", "staff", "founder"],
+    softPenaltyTerms: ["stakeholder management", "people management", "budget ownership", "consulting"],
     lanes: {
       design_jobs: [],
       ai_coding_jobs: [],
@@ -93,9 +112,22 @@ const defaultConfig: SniperConfig = {
       jobs: "Jobs",
       companies: "Companies",
       contacts: "Contacts",
+      runMetrics: "RunMetrics",
     },
   },
 };
+
+function mergeLane(base: SniperConfig["lanes"][SearchLane], override?: Partial<SniperConfig["lanes"][SearchLane]>) {
+  return {
+    ...base,
+    ...(override ?? {}),
+    queries: {
+      tr: override?.queries?.tr ?? base.queries.tr,
+      en: override?.queries?.en ?? base.queries.en,
+    },
+    keywords: override?.keywords ?? base.keywords,
+  };
+}
 
 function mergeConfig(base: SniperConfig, overrides: Partial<SniperConfig>): SniperConfig {
   return {
@@ -103,9 +135,9 @@ function mergeConfig(base: SniperConfig, overrides: Partial<SniperConfig>): Snip
     ...overrides,
     search: { ...base.search, ...(overrides.search ?? {}) },
     lanes: {
-      design_jobs: { ...base.lanes.design_jobs, ...(overrides.lanes?.design_jobs ?? {}) },
-      ai_coding_jobs: { ...base.lanes.ai_coding_jobs, ...(overrides.lanes?.ai_coding_jobs ?? {}) },
-      company_watch: { ...base.lanes.company_watch, ...(overrides.lanes?.company_watch ?? {}) },
+      design_jobs: mergeLane(base.lanes.design_jobs, overrides.lanes?.design_jobs),
+      ai_coding_jobs: mergeLane(base.lanes.ai_coding_jobs, overrides.lanes?.ai_coding_jobs),
+      company_watch: mergeLane(base.lanes.company_watch, overrides.lanes?.company_watch),
     },
     sources: {
       rss: overrides.sources?.rss ?? base.sources.rss,
@@ -114,12 +146,12 @@ function mergeConfig(base: SniperConfig, overrides: Partial<SniperConfig>): Snip
     blacklist: {
       companies: overrides.blacklist?.companies ?? base.blacklist.companies,
       keywords: overrides.blacklist?.keywords ?? base.blacklist.keywords,
+      titleTerms: overrides.blacklist?.titleTerms ?? base.blacklist.titleTerms,
+      softPenaltyTerms: overrides.blacklist?.softPenaltyTerms ?? base.blacklist.softPenaltyTerms,
       lanes: {
         design_jobs: overrides.blacklist?.lanes?.design_jobs ?? base.blacklist.lanes.design_jobs,
-        ai_coding_jobs:
-          overrides.blacklist?.lanes?.ai_coding_jobs ?? base.blacklist.lanes.ai_coding_jobs,
-        company_watch:
-          overrides.blacklist?.lanes?.company_watch ?? base.blacklist.lanes.company_watch,
+        ai_coding_jobs: overrides.blacklist?.lanes?.ai_coding_jobs ?? base.blacklist.lanes.ai_coding_jobs,
+        company_watch: overrides.blacklist?.lanes?.company_watch ?? base.blacklist.lanes.company_watch,
       },
     },
     sheets: {
@@ -132,12 +164,7 @@ function mergeConfig(base: SniperConfig, overrides: Partial<SniperConfig>): Snip
 
 function migrateLegacyConfig(raw: Record<string, unknown>): Partial<SniperConfig> {
   const search = (raw.search ?? {}) as Record<string, unknown>;
-  const sourceBlock = raw.sources;
-  const sources = Array.isArray(sourceBlock)
-    ? (sourceBlock as Array<Record<string, unknown>>)
-    : Array.isArray((sourceBlock as { rss?: unknown } | undefined)?.rss)
-      ? (((sourceBlock as { rss?: unknown }).rss as Array<Record<string, unknown>>) ?? [])
-      : [];
+  const legacySources = Array.isArray(raw.sources) ? (raw.sources as Array<Record<string, unknown>>) : [];
   const blacklist = (raw.blacklist ?? {}) as Record<string, unknown>;
   const includeKeywords = Array.isArray(search.include_keywords)
     ? search.include_keywords.filter((entry): entry is string => typeof entry === "string")
@@ -154,17 +181,14 @@ function migrateLegacyConfig(raw: Record<string, unknown>): Partial<SniperConfig
           : defaultConfig.search.minScoreThreshold,
     } as Partial<SniperConfig["search"]> as SniperConfig["search"],
     lanes: {
-      design_jobs: { keywords: includeKeywords },
-      ai_coding_jobs: { keywords: includeKeywords },
-      company_watch: { keywords: includeKeywords },
-    } as Partial<SniperConfig["lanes"]> as SniperConfig["lanes"],
+      design_jobs: { keywords: includeKeywords } as SniperConfig["lanes"]["design_jobs"],
+      ai_coding_jobs: { keywords: includeKeywords } as SniperConfig["lanes"]["ai_coding_jobs"],
+      company_watch: { keywords: includeKeywords } as SniperConfig["lanes"]["company_watch"],
+    } as SniperConfig["lanes"],
     sources: {
-      rss: sources
+      rss: legacySources
         .filter((entry) => entry.type === "rss" && typeof entry.url === "string")
-        .map((entry) => ({
-          name: String(entry.name ?? entry.url),
-          url: String(entry.url),
-        })),
+        .map((entry) => ({ name: String(entry.name ?? entry.url), url: String(entry.url) })),
       atsBoards: [],
     },
     blacklist: {
@@ -172,6 +196,8 @@ function migrateLegacyConfig(raw: Record<string, unknown>): Partial<SniperConfig
         ? blacklist.companies.filter((entry): entry is string => typeof entry === "string")
         : [],
       keywords: excludeKeywords.length ? excludeKeywords : defaultConfig.blacklist.keywords,
+      titleTerms: defaultConfig.blacklist.titleTerms,
+      softPenaltyTerms: defaultConfig.blacklist.softPenaltyTerms,
       lanes: defaultConfig.blacklist.lanes,
     },
   };
@@ -191,12 +217,9 @@ export function loadConfig(baseDir: string): SniperConfig {
     parsed.sources !== null &&
     !Array.isArray(parsed.sources);
 
-  if (looksModern) {
-    return mergeConfig(defaultConfig, parsed as Partial<SniperConfig>);
-  }
-
-  const migrated = migrateLegacyConfig(parsed);
-  return mergeConfig(defaultConfig, migrated);
+  return looksModern
+    ? mergeConfig(defaultConfig, parsed as Partial<SniperConfig>)
+    : mergeConfig(defaultConfig, migrateLegacyConfig(parsed));
 }
 
 export function saveConfig(baseDir: string, config: SniperConfig): void {

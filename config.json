@@ -1,11 +1,17 @@
 {
   "search": {
-    "maxResultsPerQuery": 6,
-    "maxQueriesPerLane": 6,
-    "minScoreThreshold": 35,
+    "maxResultsPerQuery": 8,
+    "maxQueriesPerLane": 8,
+    "minScoreThreshold": 45,
     "browserFallback": false,
+    "searchProviderConcurrency": 4,
+    "pageFetchConcurrency": 6,
+    "maxPagesPerDomainPerRun": 10,
+    "retries": 2,
+    "timeoutMs": 10000,
     "priorityCities": ["Istanbul", "İstanbul"],
-    "priorityCountries": ["Turkey", "Türkiye"]
+    "priorityCountries": ["Turkey", "Türkiye"],
+    "remoteScopes": ["remote", "hybrid"]
   },
   "lanes": {
     "design_jobs": {
@@ -14,39 +20,65 @@
         "tr": [
           "istanbul ui ux tasarim is ilani",
           "istanbul urun tasarimcisi figma kariyer",
-          "turkiye tasarim sistemleri product designer remote"
+          "turkiye design engineer figma react kariyer"
         ],
         "en": [
-          "Istanbul product designer figma jobs",
+          "Istanbul product designer jobs",
           "Turkey UX UI designer careers",
-          "remote product designer design systems jobs"
+          "design engineer figma react jobs"
         ]
       },
-      "keywords": ["figma", "product design", "ux", "ui", "tasarım", "design systems", "visual design"]
+      "keywords": [
+        "product designer",
+        "ux",
+        "ui",
+        "figma",
+        "design systems",
+        "creative technologist",
+        "design engineer"
+      ]
     },
     "ai_coding_jobs": {
       "enabled": true,
       "queries": {
         "tr": [
           "istanbul yapay zeka muhendisi is ilani",
-          "turkiye llm engineer remote",
-          "istanbul agent engineer typescript python kariyer"
+          "turkiye agent engineer kariyer",
+          "turkiye typescript python ai kariyer"
         ],
         "en": [
-          "Istanbul AI engineer TypeScript jobs",
-          "remote LLM engineer developer tools jobs",
-          "agent engineer automation node python jobs"
+          "Istanbul AI engineer jobs",
+          "remote LLM engineer jobs",
+          "agent engineer TypeScript Python startup"
         ]
       },
-      "keywords": ["ai engineer", "llm", "agent", "automation", "typescript", "node", "python", "developer tools"]
+      "keywords": [
+        "ai engineer",
+        "llm",
+        "agent",
+        "automation",
+        "typescript",
+        "node",
+        "python",
+        "developer tools",
+        "creative automation"
+      ]
     },
     "company_watch": {
       "enabled": true,
       "queries": {
-        "tr": ["istanbul design studio careers", "istanbul ai startup careers"],
-        "en": ["Istanbul AI startup careers", "Turkey product design company careers"]
+        "tr": [
+          "istanbul ai startup careers",
+          "istanbul design studio team careers",
+          "turkiye genai startup hiring"
+        ],
+        "en": [
+          "Istanbul AI startup careers",
+          "Turkey product design startup team",
+          "creative AI startup remote careers"
+        ]
       },
-      "keywords": ["careers", "jobs", "hiring", "team", "designer", "ai"]
+      "keywords": ["careers", "jobs", "hiring", "team", "startup", "founding", "series a", "seed"]
     }
   },
   "sources": {
@@ -64,7 +96,17 @@
   },
   "blacklist": {
     "companies": [],
-    "keywords": ["senior", "principal", "staff", "manager", "head of", "director", "vp", "founder", "co-founder", "cofounder", "founding", "no longer accepting applications", "no longer available", "applications closed", "position filled", "job expired", "no longer hiring"],
+    "keywords": [
+      "account executive",
+      "sales",
+      "gtm",
+      "performance marketing",
+      "chief of staff",
+      "cto",
+      "cfo"
+    ],
+    "titleTerms": ["senior", "lead", "manager", "director", "head", "vp", "principal", "staff", "founder"],
+    "softPenaltyTerms": ["stakeholder management", "people management", "budget ownership", "consulting"],
     "lanes": {
       "design_jobs": [],
       "ai_coding_jobs": [],
@@ -78,7 +120,8 @@
     "tabs": {
       "jobs": "Jobs",
       "companies": "Companies",
-      "contacts": "Contacts"
+      "contacts": "Contacts",
+      "runMetrics": "RunMetrics"
     }
   }
 }

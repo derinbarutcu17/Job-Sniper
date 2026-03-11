@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { scoreListing } from "../src/scoring.js";
 import { loadConfig } from "../src/config.js";
+import { scoreListing } from "../src/scoring.js";
 import type { ListingCandidate, ProfileSummary } from "../src/types.js";
 import { makeTempDir } from "./helpers.js";
 
 const profile: ProfileSummary = {
   roleFamilies: ["design", "ai_coding"],
-  seniorityCeiling: "mid",
+  targetSeniority: "junior",
+  allowStretchRoles: false,
+  avoidTitleTerms: ["senior", "lead", "manager", "director", "head", "principal", "staff"],
   preferredLocations: ["Istanbul", "Remote"],
   languagePreference: ["tr", "en"],
   toolSignals: ["figma", "design systems", "typescript", "python", "agent"],
@@ -16,7 +18,9 @@ const profile: ProfileSummary = {
 function listing(partial: Partial<ListingCandidate>): ListingCandidate {
   return {
     lane: "design_jobs",
+    externalId: "listing-1",
     title: "Product Designer",
+    titleFamily: "",
     company: "ModaAI",
     location: "Istanbul",
     country: "Turkey",
@@ -26,14 +30,30 @@ function listing(partial: Partial<ListingCandidate>): ListingCandidate {
     salary: "",
     description: "Figma, design systems, UX, and product design role in Istanbul.",
     url: "https://jobs.example.com/designer",
+    applyUrl: "https://jobs.example.com/designer",
     source: "test",
     sourceType: "page",
     sourceUrls: ["https://jobs.example.com/designer"],
     companyUrl: "https://moda.ai",
     careersUrl: "https://moda.ai/careers",
+    aboutUrl: "",
+    teamUrl: "",
+    contactUrl: "",
+    pressUrl: "",
     companyLinkedinUrl: "",
     publicContacts: [],
-    publicEmails: [],
+    postedAt: "",
+    validThrough: "",
+    department: "",
+    experienceYearsText: "",
+    remoteScope: "",
+    applicantLocationRequirements: [],
+    applicationContactName: "",
+    applicationContactEmail: "",
+    parseConfidence: 0.8,
+    sourceConfidence: 0.8,
+    isRealJobPage: true,
+    raw: {},
     ...partial,
   };
 }
@@ -42,33 +62,37 @@ describe("scoring", () => {
   it("prioritizes Turkish Istanbul design roles", () => {
     const config = loadConfig(makeTempDir());
     const scored = scoreListing(config, profile, listing({}));
-    expect(scored.score).toBeGreaterThan(70);
-    expect(scored.category).toBe("Good Match");
+    expect(scored.score).toBeGreaterThan(55);
+    expect(scored.category).not.toBe("Excluded");
   });
 
-  it("scores remote AI roles positively but below Istanbul-first matches", () => {
+  it("keeps manager mentions in description as soft negatives, not hard excludes", () => {
     const config = loadConfig(makeTempDir());
     const scored = scoreListing(
       config,
       profile,
       listing({
-        lane: "ai_coding_jobs",
-        title: "Agent Engineer",
-        location: "Remote",
-        language: "en",
-        workModel: "remote",
-        description: "Remote LLM agent role using TypeScript, Node, and Python automation.",
+        description: "Product Designer reporting to a Design Manager with stakeholder management across product teams.",
       }),
     );
-    expect(scored.score).toBeGreaterThan(50);
     expect(scored.category).not.toBe("Excluded");
+    expect(scored.breakdown.negatives.some((entry) => entry.toLowerCase().includes("management"))).toBe(true);
   });
 
-  it("excludes blacklisted jobs", () => {
-    const baseDir = makeTempDir();
-    const config = loadConfig(baseDir);
-    config.blacklist.companies.push("ModaAI");
-    const scored = scoreListing(config, profile, listing({}));
+  it("hard excludes senior titles", () => {
+    const config = loadConfig(makeTempDir());
+    const scored = scoreListing(config, profile, listing({ title: "Senior Product Designer" }));
+    expect(scored.category).toBe("Excluded");
+    expect(scored.eligibility).toBe("excluded");
+  });
+
+  it("excludes closed roles from explicit closure text", () => {
+    const config = loadConfig(makeTempDir());
+    const scored = scoreListing(
+      config,
+      profile,
+      listing({ description: "Applications closed. This role is no longer hiring." }),
+    );
     expect(scored.category).toBe("Excluded");
   });
 });

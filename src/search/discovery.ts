@@ -1,106 +1,344 @@
 import { loadConfig } from "../config.js";
-import { openDatabase, recordSearchRun, summarizeRun, upsertJob } from "../db.js";
+import {
+  enqueueDiscoveryCandidates,
+  markCandidateStatus,
+  openDatabase,
+  recordRunMetrics,
+  summarizeRun,
+  upsertCompany,
+  upsertContact,
+  upsertJob,
+  upsertPageCache,
+} from "../db.js";
+import { mapLimit, withRetries } from "../lib/async.js";
 import { createDefaultDependencies } from "../lib/http.js";
+import { canonicalCompanyKey, canonicalContactKey, domainFromUrl, normalizeUrl } from "../lib/url.js";
 import { loadProfile } from "../profile.js";
-import { scoreListing } from "../scoring.js";
-import type { Dependencies, ListingCandidate, RunSummary } from "../types.js";
-import { discoverFromAtsBoard, expandSearchResult } from "./ats.js";
+import { normalizeTitleFamily, scoreListing } from "../scoring.js";
+import type { CompanyRecordInput, ContactCandidate, Dependencies, DiscoveryCandidate, ListingCandidate, RunSummary, SearchLane } from "../types.js";
+import { crawlUrl, discoverFromAtsBoard, expandSearchResult } from "./ats.js";
+import { classifyCandidate } from "./classify.js";
+import { gatherSearchCandidates } from "./frontier.js";
 import { buildQueries } from "./queries.js";
 import { discoverFromRss } from "./rss.js";
-import { searchDuckDuckGo } from "./web.js";
+import { getSearchProviders } from "./web.js";
 
-async function collectSearchListings(baseDir: string, deps: Dependencies): Promise<ListingCandidate[]> {
-  const config = loadConfig(baseDir);
-  const queries = buildQueries(config);
-  const listings: ListingCandidate[] = [];
-
-  for (const query of queries) {
-    try {
-      const results = await searchDuckDuckGo(query, deps);
-      let found = 0;
-      for (const result of results.slice(0, config.search.maxResultsPerQuery)) {
-        const expanded = await expandSearchResult(result, deps);
-        listings.push(...expanded);
-        found += expanded.length;
-      }
-      recordSearchRun(openDatabase(baseDir).db, query.lane, query.query, "search", "ok", found, found);
-    } catch (error) {
-      recordSearchRun(
-        openDatabase(baseDir).db,
-        query.lane,
-        query.query,
-        "search",
-        "error",
-        0,
-        0,
-        error instanceof Error ? error.message : String(error),
-      );
-    }
-  }
-
-  return listings;
+export interface RunDiscoveryOptions {
+  lane?: SearchLane;
+  companyWatchOnly?: boolean;
 }
 
-async function collectConfiguredSources(baseDir: string, deps: Dependencies): Promise<ListingCandidate[]> {
-  const config = loadConfig(baseDir);
-  const listings: ListingCandidate[] = [];
-  const bundle = openDatabase(baseDir);
+function sourceBreakdownAccumulator(sourceBreakdown: Record<string, number>, key: string, amount = 1): void {
+  sourceBreakdown[key] = (sourceBreakdown[key] ?? 0) + amount;
+}
 
+function filterQueries(baseDir: string, lane?: SearchLane, companyWatchOnly = false) {
+  const config = loadConfig(baseDir);
+  const { profile } = loadProfile(baseDir);
+  return buildQueries(config, profile).filter((query) => {
+    if (companyWatchOnly) return query.lane === "company_watch";
+    if (lane) return query.lane === lane;
+    return true;
+  });
+}
+
+function buildCompanyInput(candidate: DiscoveryCandidate, pageText: string, contacts: ContactCandidate[]): CompanyRecordInput {
+  const domain = domainFromUrl(candidate.url);
+  const location =
+    /istanbul/i.test(pageText) ? "Istanbul" :
+    /turkiye|türkiye|turkey/i.test(pageText) ? "Turkey" :
+    "";
+  const startupSignals = [
+    ...(/seed|series a|founding|small team|0->1|0-1/i.test(pageText) ? ["startup_language"] : []),
+    ...(/startup|studio|builder/i.test(pageText) ? ["company_language"] : []),
+  ];
+  const hiringSignals = [
+    ...(/hiring|join us|open roles|careers|jobs/i.test(pageText) ? ["hiring_page"] : []),
+    ...(contacts.length ? ["public_contact_surface"] : []),
+  ];
+  return {
+    canonicalKey: canonicalCompanyKey(domain || candidate.title || "unknown", domain),
+    name: candidate.title.replace(/\s*[|\-].*$/, "").trim() || domain || "Unknown",
+    domain,
+    location,
+    companyUrl: domain ? `https://${domain}` : candidate.url,
+    careersUrl: /career|jobs|hiring/i.test(candidate.url) ? candidate.url : "",
+    aboutUrl: /about/i.test(candidate.url) ? candidate.url : "",
+    teamUrl: /team/i.test(candidate.url) ? candidate.url : "",
+    contactUrl: /contact|imprint/i.test(candidate.url) ? candidate.url : "",
+    pressUrl: /press/i.test(candidate.url) ? candidate.url : "",
+    linkedinUrl: contacts.find((contact) => contact.kind === "linkedin_company")?.linkedinUrl ?? "",
+    description: pageText.slice(0, 1200),
+    sourceUrls: [candidate.url],
+    publicContacts: contacts.map((contact) => contact.email || contact.linkedinUrl || contact.sourceUrl),
+    startupSignals,
+    hiringSignals,
+    founderNames: [],
+    cities: location ? [location] : [],
+    sizeBand: "",
+    stageText: startupSignals.length ? "startup signal" : "",
+    remotePolicy: /remote|uzaktan|hybrid/i.test(pageText) ? "remote-friendly" : "",
+    openRoleCount: /jobs|careers|open roles/i.test(pageText) ? 1 : 0,
+    startupScore: startupSignals.length * 8,
+    companyFitScore: candidate.lane === "company_watch" ? 10 : 6,
+    hiringSignalScore: hiringSignals.length * 4,
+    contactabilityScore: contacts.some((contact) => contact.confidence === "high") ? 12 : contacts.length ? 6 : 0,
+    isStartupCandidate: startupSignals.length > 0,
+    lastSeenAt: new Date().toISOString(),
+  };
+}
+
+async function collectConfiguredListings(
+  config: ReturnType<typeof loadConfig>,
+  deps: Dependencies,
+  options: RunDiscoveryOptions,
+  sourceBreakdown: Record<string, number>,
+): Promise<ListingCandidate[]> {
+  const listings: ListingCandidate[] = [];
   for (const source of config.sources.rss) {
-    try {
-      const discovered = await discoverFromRss(source, deps);
-      listings.push(...discovered);
-      recordSearchRun(bundle.db, discovered[0]?.lane ?? "company_watch", source.url, "rss", "ok", discovered.length, discovered.length);
-    } catch (error) {
-      recordSearchRun(
-        bundle.db,
-        "company_watch",
-        source.url,
-        "rss",
-        "error",
-        0,
-        0,
-        error instanceof Error ? error.message : String(error),
-      );
+    if (options.lane && options.lane !== "company_watch" && options.lane !== undefined) {
+      // RSS feeds are still useful across job lanes, so keep them unless user requests company-only mode.
     }
+    const discovered = await discoverFromRss(source, deps);
+    listings.push(...discovered.filter((listing) => (options.companyWatchOnly ? listing.lane === "company_watch" : options.lane ? listing.lane === options.lane : true)));
+    sourceBreakdownAccumulator(sourceBreakdown, "rss", discovered.length);
   }
 
   for (const board of config.sources.atsBoards) {
-    try {
-      const discovered = await discoverFromAtsBoard(board, deps);
-      listings.push(...discovered);
-      recordSearchRun(bundle.db, board.lane ?? "company_watch", board.url, "ats", "ok", discovered.length, discovered.length);
-    } catch (error) {
-      recordSearchRun(
-        bundle.db,
-        board.lane ?? "company_watch",
-        board.url,
-        "ats",
-        "error",
-        0,
-        0,
-        error instanceof Error ? error.message : String(error),
-      );
-    }
+    if (options.companyWatchOnly && (board.lane ?? "company_watch") !== "company_watch") continue;
+    if (options.lane && (board.lane ?? "company_watch") !== options.lane) continue;
+    const discovered = await discoverFromAtsBoard(board, deps);
+    listings.push(...discovered);
+    sourceBreakdownAccumulator(sourceBreakdown, "ats", discovered.length);
   }
 
   return listings;
 }
 
-export async function runDiscovery(baseDir: string, deps: Dependencies = createDefaultDependencies()): Promise<RunSummary> {
+export async function runDiscovery(
+  baseDir: string,
+  deps: Dependencies = createDefaultDependencies(),
+  options: RunDiscoveryOptions = {},
+): Promise<RunSummary> {
   const { db } = openDatabase(baseDir);
   const config = loadConfig(baseDir);
   const { profile } = loadProfile(baseDir);
+  const sourceBreakdown: Record<string, number> = {};
 
-  const rawListings = [
-    ...(await collectSearchListings(baseDir, deps)),
-    ...(await collectConfiguredSources(baseDir, deps)),
-  ];
+  const providers = getSearchProviders();
+  const searchQueries = filterQueries(baseDir, options.lane, options.companyWatchOnly);
+  const gathered = await gatherSearchCandidates(searchQueries, providers, deps, config);
+  Object.entries(gathered.sourceBreakdown).forEach(([key, value]) => sourceBreakdownAccumulator(sourceBreakdown, key, value));
 
-  const results = rawListings.map((listing) => {
-    const scored = scoreListing(config, profile, listing);
-    return upsertJob(db, config, listing, scored.score, scored.category, scored.rationale, scored.relevantProjects, profile);
+  const directListings = await collectConfiguredListings(config, deps, options, sourceBreakdown);
+
+  const initialCandidates = gathered.candidates.map(classifyCandidate);
+  let deduped = gathered.deduped;
+  const queue: DiscoveryCandidate[] = [...initialCandidates];
+  const seen = new Set(initialCandidates.map((candidate) => candidate.normalizedUrl));
+  const domainBudgets = new Map<string, number>();
+
+  enqueueDiscoveryCandidates(db, initialCandidates);
+
+  let totalNew = 0;
+  let totalUpdated = 0;
+  let excluded = 0;
+  let companiesTouched = 0;
+  let contactsTouched = 0;
+  let totalDiscovered = directListings.length + initialCandidates.length;
+  let parsed = 0;
+  let fetchAttempts = 0;
+  let fetchSuccesses = 0;
+  let jsFallbacks = 0;
+
+  const processListing = (listing: (typeof directListings)[number]) => {
+    const scored = scoreListing(config, profile, { ...listing, titleFamily: normalizeTitleFamily(listing.title) });
+    const result = upsertJob(
+      db,
+      config,
+      { ...listing, titleFamily: scored.titleFamily },
+      scored.score,
+      scored.category,
+      scored.rationale,
+      scored.relevantProjects,
+      profile,
+      scored.breakdown,
+      scored.eligibility,
+    );
+    totalNew += Number(result.inserted);
+    totalUpdated += Number(result.updated);
+    excluded += Number(result.excluded);
+    companiesTouched += Number(result.companyTouched);
+    contactsTouched += result.contactsTouched;
+  };
+
+  for (const listing of directListings) {
+    processListing(listing);
+  }
+
+  const jobCandidates = initialCandidates.filter((candidate) => candidate.lane !== "company_watch");
+  const expandedSearchListings = await mapLimit(jobCandidates, config.search.pageFetchConcurrency, async (candidate) => {
+    fetchAttempts += 1;
+    try {
+      const listings = await withRetries(
+        () =>
+          expandSearchResult(
+            {
+              lane: candidate.lane,
+              title: candidate.title,
+              url: candidate.url,
+              snippet: candidate.snippet,
+              source: "search",
+              query: candidate.query ?? "",
+              provider: candidate.source,
+            },
+            deps,
+          ),
+        config.search.retries,
+      );
+      fetchSuccesses += 1;
+      parsed += 1;
+      return listings;
+    } catch {
+      return [];
+    }
+  });
+  for (const listing of expandedSearchListings.flat()) {
+    processListing(listing);
+  }
+
+  let currentBatch = initialCandidates.filter((candidate) => candidate.lane === "company_watch");
+  while (currentBatch.length) {
+    const results = await mapLimit(currentBatch, config.search.pageFetchConcurrency, async (candidate) => {
+      const domain = candidate.domain || domainFromUrl(candidate.url);
+      const domainCount = domainBudgets.get(domain) ?? 0;
+      if (domain && domainCount >= config.search.maxPagesPerDomainPerRun) {
+        return { candidate, skipped: true as const };
+      }
+      domainBudgets.set(domain, domainCount + 1);
+      fetchAttempts += 1;
+
+      try {
+        const outcome = await withRetries(
+          () => crawlUrl(candidate.url, candidate.lane, candidate.sourceType, candidate.source, deps),
+          config.search.retries,
+        );
+        fetchSuccesses += 1;
+        parsed += 1;
+        if (outcome.usedBrowserFallback) {
+          jsFallbacks += 1;
+        }
+
+        upsertPageCache(db, {
+          normalizedUrl: normalizeUrl(outcome.page.url),
+          url: outcome.page.url,
+          domain: outcome.page.domain,
+          sourceType: outcome.page.sourceType,
+          intent: candidate.intent,
+          pageType: outcome.page.pageType,
+          html: outcome.page.html,
+          text: outcome.page.text,
+          fetchStatus: 200,
+          usedBrowserFallback: outcome.usedBrowserFallback,
+        });
+
+        markCandidateStatus(db, candidate.normalizedUrl, "done");
+
+        return { candidate, outcome, skipped: false as const };
+      } catch (error) {
+        markCandidateStatus(
+          db,
+          candidate.normalizedUrl,
+          "error",
+          error instanceof Error ? error.message : String(error),
+        );
+        return { candidate, error, skipped: false as const };
+      }
+    });
+
+    const nextBatch: DiscoveryCandidate[] = [];
+    for (const result of results) {
+      if (result.skipped || !("outcome" in result) || !result.outcome) {
+        continue;
+      }
+
+      const { candidate, outcome } = result;
+      if (!outcome.listings.length && candidate.lane === "company_watch") {
+        const company = buildCompanyInput(candidate, outcome.page.text, outcome.contacts);
+        const companyId = upsertCompany(db, company);
+        companiesTouched += 1;
+        for (const contact of outcome.contacts) {
+          upsertContact(db, {
+            canonicalKey: canonicalContactKey(contact.email, contact.linkedinUrl, contact.name || outcome.page.domain, company.canonicalKey),
+            companyCanonicalKey: company.canonicalKey,
+            name: contact.name,
+            title: contact.title,
+            email: contact.email,
+            sourceUrl: contact.sourceUrl,
+            linkedinUrl: contact.linkedinUrl,
+            contactKind: contact.kind,
+            notes: contact.kind,
+            confidence: contact.confidence,
+            evidenceType: contact.evidenceType,
+            evidenceExcerpt: contact.evidenceExcerpt,
+            isPublic: contact.isPublic,
+            lastVerifiedAt: new Date().toISOString(),
+            pageType: contact.pageType,
+            lastSeenAt: new Date().toISOString(),
+          });
+          contactsTouched += 1;
+        }
+        void companyId;
+      }
+
+      for (const listing of outcome.listings) {
+        processListing(listing);
+      }
+
+      for (const childUrl of outcome.childUrls) {
+        const normalizedUrl = normalizeUrl(childUrl);
+        if (seen.has(normalizedUrl)) {
+          deduped += 1;
+          continue;
+        }
+        seen.add(normalizedUrl);
+        const childCandidate = classifyCandidate({
+          url: childUrl,
+          normalizedUrl,
+          sourceType: "career_page",
+          lane: candidate.lane,
+          intent: "job",
+          query: candidate.query,
+          confidence: Math.max(0.55, candidate.confidence - 0.05),
+          source: candidate.source,
+          discoveredAt: new Date().toISOString(),
+          domain: domainFromUrl(childUrl),
+          title: "",
+          snippet: "",
+        });
+        nextBatch.push(childCandidate);
+        enqueueDiscoveryCandidates(db, [childCandidate]);
+        totalDiscovered += 1;
+      }
+    }
+
+    currentBatch = nextBatch;
+  }
+
+  const summary = summarizeRun({
+    totalFound: totalDiscovered,
+    totalNew,
+    totalUpdated,
+    excluded,
+    companiesTouched,
+    contactsTouched,
+    deduped,
+    parsed,
+    fetchSuccessRate: fetchAttempts ? fetchSuccesses / fetchAttempts : 0,
+    parseSuccessRate: fetchAttempts ? parsed / fetchAttempts : 0,
+    jsFallbackRate: fetchAttempts ? jsFallbacks / fetchAttempts : 0,
   });
 
-  return summarizeRun(results);
+  recordRunMetrics(db, summary, sourceBreakdown);
+  return summary;
 }

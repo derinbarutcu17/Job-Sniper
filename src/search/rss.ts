@@ -9,19 +9,20 @@ const parser = new XMLParser({
 
 function inferLane(title: string, sourceName: string): SearchLane {
   const haystack = `${title} ${sourceName}`.toLowerCase();
-  if (haystack.includes("design")) {
-    return "design_jobs";
-  }
-  if (haystack.includes("career") || haystack.includes("company")) {
-    return "company_watch";
-  }
+  if (haystack.includes("design") || haystack.includes("tasarım")) return "design_jobs";
+  if (haystack.includes("career") || haystack.includes("company") || haystack.includes("startup")) return "company_watch";
   return "ai_coding_jobs";
 }
 
-export async function discoverFromRss(
-  source: RssSource,
-  deps: Dependencies,
-): Promise<ListingCandidate[]> {
+function inferWorkModel(text: string): ListingCandidate["workModel"] {
+  const lower = text.toLowerCase();
+  if (lower.includes("remote") || lower.includes("uzaktan")) return "remote";
+  if (lower.includes("hybrid")) return "hybrid";
+  if (lower.includes("onsite") || lower.includes("on-site")) return "onsite";
+  return "unknown";
+}
+
+export async function discoverFromRss(source: RssSource, deps: Dependencies): Promise<ListingCandidate[]> {
   const response = await deps.fetch(source.url);
   if (!response.ok) {
     throw new Error(`RSS fetch failed with ${response.status} for ${source.url}`);
@@ -29,41 +30,55 @@ export async function discoverFromRss(
 
   const xml = await response.text();
   const parsed = parser.parse(xml) as Record<string, unknown>;
-  const channel = (parsed.rss as Record<string, unknown> | undefined)?.channel as
-    | Record<string, unknown>
-    | undefined;
-  const items = Array.isArray(channel?.item) ? channel?.item : channel?.item ? [channel.item] : [];
+  const channel = (parsed.rss as Record<string, unknown> | undefined)?.channel as Record<string, unknown> | undefined;
+  const items = Array.isArray(channel?.item) ? channel.item : channel?.item ? [channel.item] : [];
 
   return items.map((item) => {
     const record = item as Record<string, unknown>;
     const title = decodeEntities(String(record.title ?? "Untitled role"));
-    const link = String(record.link ?? "");
-    const description = summarizeToLine(String(record.description ?? ""), 600);
+    const url = String(record.link ?? "");
+    const description = summarizeToLine(String(record.description ?? ""), 1200);
     const lane = inferLane(title, source.name);
     const [jobTitle, company = "Unknown"] =
       title.includes(" // ") ? title.split(" // ", 2) : title.includes(" at ") ? title.split(" at ", 2) : [title];
 
     return {
       lane,
-      externalId: link,
+      externalId: url,
       title: jobTitle.trim(),
+      titleFamily: "",
       company: company.trim(),
       location: lane === "design_jobs" ? "Istanbul/Remote" : "Remote",
       country: "",
-      language: "en",
-      workModel: link.toLowerCase().includes("remote") ? "remote" : "unknown",
+      language: /[ığüşöçİĞÜŞÖÇ]/.test(description) ? "tr" : "en",
+      workModel: inferWorkModel(description),
       employmentType: "",
       salary: "",
       description,
-      url: link,
+      url,
+      applyUrl: url,
       source: source.name,
       sourceType: "rss",
-      sourceUrls: uniqueNonEmpty([link, source.url]),
+      sourceUrls: uniqueNonEmpty([url, source.url]),
       companyUrl: "",
-      careersUrl: link,
+      careersUrl: url,
+      aboutUrl: "",
+      teamUrl: "",
+      contactUrl: "",
+      pressUrl: "",
       companyLinkedinUrl: "",
       publicContacts: [],
-      publicEmails: [],
+      postedAt: String(record.pubDate ?? ""),
+      validThrough: "",
+      department: "",
+      experienceYearsText: "",
+      remoteScope: "",
+      applicantLocationRequirements: [],
+      applicationContactName: "",
+      applicationContactEmail: "",
+      parseConfidence: 0.7,
+      sourceConfidence: 0.75,
+      isRealJobPage: true,
       raw: record,
     } satisfies ListingCandidate;
   });

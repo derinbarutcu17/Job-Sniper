@@ -3,6 +3,7 @@ export function normalizeText(value: string): string {
     .normalize("NFKD")
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/[İI]/g, "i")
+    .replace(/ß/g, "ss")
     .toLowerCase();
 }
 
@@ -44,4 +45,26 @@ export function includesAny(text: string, candidates: string[]): boolean {
 export function pickTopSignals(text: string, candidates: string[], limit = 5): string[] {
   const normalized = normalizeText(text);
   return candidates.filter((candidate) => normalized.includes(normalizeText(candidate))).slice(0, limit);
+}
+
+export function findFirstMatch(text: string, candidates: string[]): string {
+  const normalized = normalizeText(text);
+  return candidates.find((candidate) => normalized.includes(normalizeText(candidate))) ?? "";
+}
+
+export function extractYearRequirement(text: string): string {
+  const match = text.match(/(\d+)\s*\+?\s*(?:years|yrs|yil|yıl)/i);
+  return match?.[0] ?? "";
+}
+
+export function excerptAround(text: string, needle: string, radius = 60): string {
+  const normalized = normalizeText(text);
+  const normalizedNeedle = normalizeText(needle);
+  const index = normalized.indexOf(normalizedNeedle);
+  if (index === -1) {
+    return summarizeToLine(text, radius * 2);
+  }
+  const start = Math.max(0, index - radius);
+  const end = Math.min(text.length, index + normalizedNeedle.length + radius);
+  return text.slice(start, end).replace(/\s+/g, " ").trim();
 }

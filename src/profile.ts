@@ -2,8 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import pdf from "pdf-parse";
 import { resolveProfilePath } from "./lib/paths.js";
-import { includesAny, normalizeText, pickTopSignals, summarizeToLine } from "./lib/text.js";
-import type { ProfileSummary } from "./types.js";
+import { extractYearRequirement, findFirstMatch, includesAny, normalizeText, pickTopSignals, summarizeToLine } from "./lib/text.js";
+import type { ProfileSummary, SeniorityTarget } from "./types.js";
 
 const DESIGN_SIGNALS = [
   "figma",
@@ -15,7 +15,10 @@ const DESIGN_SIGNALS = [
   "brand",
   "motion",
   "creative",
+  "design engineer",
+  "creative technologist",
 ];
+
 const AI_SIGNALS = [
   "ai",
   "llm",
@@ -27,7 +30,23 @@ const AI_SIGNALS = [
   "developer tools",
   "full-stack",
   "openai",
+  "react",
 ];
+
+const NEGATED_SENIORITY_PATTERNS = [
+  /no\s+(senior|lead|manager|director|head|principal|staff)\s+roles?/i,
+  /(junior|entry[- ]level|associate|intern)\s+(only|roles?)/i,
+  /(no|without)\s+(lead|managerial|management)\s+roles?/i,
+];
+
+const POSITIVE_SENIORITY_PATTERNS: Array<{ level: SeniorityTarget; pattern: RegExp }> = [
+  { level: "senior", pattern: /\b(senior|principal|staff|lead)\s+(product|ux|ui|software|frontend|ai|design|creative|automation|engineer|designer)/i },
+  { level: "mid", pattern: /\b(mid|intermediate)\s+(product|ux|ui|software|frontend|ai|design|creative|automation|engineer|designer)/i },
+  { level: "junior", pattern: /\b(junior|associate|graduate)\s+(product|ux|ui|software|frontend|ai|design|creative|automation|engineer|designer)/i },
+  { level: "intern", pattern: /\b(intern|internship|trainee|staj)\b/i },
+];
+
+const TITLE_AVOID_TERMS = ["senior", "lead", "manager", "director", "head", "principal", "staff"];
 
 async function readProfileInput(input: string): Promise<string> {
   const trimmed = input.trim();
@@ -48,6 +67,64 @@ async function readProfileInput(input: string): Promise<string> {
   return trimmed;
 }
 
+function deriveTargetSeniority(content: string): {
+  targetSeniority: SeniorityTarget;
+  allowStretchRoles: boolean;
+  avoidTitleTerms: string[];
+} {
+  const normalized = normalizeText(content);
+  const yearRequirement = extractYearRequirement(content);
+  const years = yearRequirement ? Number.parseInt(yearRequirement, 10) : 0;
+
+  if (NEGATED_SENIORITY_PATTERNS.some((pattern) => pattern.test(content))) {
+    return {
+      targetSeniority: includesAny(normalized, ["intern", "internship", "staj"]) ? "intern" : "junior",
+      allowStretchRoles: false,
+      avoidTitleTerms: TITLE_AVOID_TERMS,
+    };
+  }
+
+  for (const entry of POSITIVE_SENIORITY_PATTERNS) {
+    if (entry.pattern.test(content)) {
+      return {
+        targetSeniority: entry.level,
+        allowStretchRoles: entry.level === "mid" || entry.level === "senior",
+        avoidTitleTerms: entry.level === "senior" ? [] : TITLE_AVOID_TERMS,
+      };
+    }
+  }
+
+  if (includesAny(normalized, ["master's", "masters", "graduate", "student", "thesis"])) {
+    return {
+      targetSeniority: "junior",
+      allowStretchRoles: false,
+      avoidTitleTerms: TITLE_AVOID_TERMS,
+    };
+  }
+
+  if (years >= 5 || includesAny(normalized, ["leading teams", "team lead", "managed a team"])) {
+    return {
+      targetSeniority: "senior",
+      allowStretchRoles: true,
+      avoidTitleTerms: [],
+    };
+  }
+
+  if (years >= 2) {
+    return {
+      targetSeniority: "mid",
+      allowStretchRoles: true,
+      avoidTitleTerms: TITLE_AVOID_TERMS.filter((term) => term !== "lead"),
+    };
+  }
+
+  return {
+    targetSeniority: includesAny(normalized, ["intern", "internship", "staj"]) ? "intern" : "junior",
+    allowStretchRoles: false,
+    avoidTitleTerms: TITLE_AVOID_TERMS,
+  };
+}
+
 export function deriveProfileSummary(content: string): ProfileSummary {
   const normalized = normalizeText(content);
   const roleFamilies: string[] = [];
@@ -62,12 +139,10 @@ export function deriveProfileSummary(content: string): ProfileSummary {
     roleFamilies.push("generalist");
   }
 
-  const seniorityCeiling = includesAny(normalized, ["lead", "senior", "principal", "staff"])
-    ? "senior"
-    : "mid";
-
+  const seniority = deriveTargetSeniority(content);
   const preferredLocations = [
-    ...(includesAny(normalized, ["istanbul", "istanbul"]) ? ["Istanbul"] : []),
+    ...(includesAny(normalized, ["istanbul"]) ? ["Istanbul"] : []),
+    ...(includesAny(normalized, ["berlin"]) ? ["Berlin"] : []),
     ...(includesAny(normalized, ["remote", "uzaktan"]) ? ["Remote"] : []),
     ...(includesAny(normalized, ["turkiye", "türkiye", "turkey"]) ? ["Turkey"] : []),
   ];
@@ -78,17 +153,24 @@ export function deriveProfileSummary(content: string): ProfileSummary {
   ];
 
   const toolSignals = [
-    ...pickTopSignals(normalized, DESIGN_SIGNALS, 5),
-    ...pickTopSignals(normalized, AI_SIGNALS, 5),
-  ].slice(0, 8);
+    ...pickTopSignals(normalized, DESIGN_SIGNALS, 6),
+    ...pickTopSignals(normalized, AI_SIGNALS, 6),
+  ].slice(0, 10);
+
+  const focusHint = findFirstMatch(
+    normalized,
+    ["design engineer", "creative technologist", "product design", "agent", "automation", "design systems"],
+  );
 
   return {
     roleFamilies,
-    seniorityCeiling,
+    targetSeniority: seniority.targetSeniority,
+    allowStretchRoles: seniority.allowStretchRoles,
+    avoidTitleTerms: seniority.avoidTitleTerms,
     preferredLocations,
     languagePreference: languagePreference.length ? languagePreference : ["tr", "en"],
     toolSignals: [...new Set(toolSignals)],
-    summary: summarizeToLine(content, 320),
+    summary: summarizeToLine(`${focusHint ? `${focusHint}. ` : ""}${content}`, 400),
   };
 }
 

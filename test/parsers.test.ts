@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { discoverFromRss } from "../src/search/rss.js";
 import { expandSearchResult } from "../src/search/ats.js";
 import { canonicalJobKey } from "../src/lib/url.js";
+import { discoverFromRss } from "../src/search/rss.js";
 import { fixture, makeFetchStub } from "./helpers.js";
 
 describe("parsers", () => {
@@ -28,13 +28,15 @@ describe("parsers", () => {
         title: "UI/UX Tasarımcı",
         url: "https://jobs.example.com/turkish-design-role",
         snippet: "İstanbul hibrit ürün tasarım rolü.",
-        source: "duckduckgo",
+        source: "search",
+        query: "ui ux istanbul",
+        provider: "duckduckgo",
       },
       deps,
     );
     expect(listings[0]?.company).toBe("Istanbul Studio");
     expect(listings[0]?.language).toBe("tr");
-    expect(listings[0]?.publicEmails).toContain("hello@istanbulstudio.com");
+    expect(listings[0]?.publicContacts.some((contact) => contact.email === "hello@istanbulstudio.com")).toBe(true);
   });
 
   it("normalizes canonical job keys from tracking URLs", () => {
