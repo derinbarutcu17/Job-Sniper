@@ -1,6 +1,7 @@
 import { mapLimit } from "../lib/async.js";
 import { summarizeToLine, uniqueNonEmpty } from "../lib/text.js";
 import { domainFromUrl, normalizeUrl } from "../lib/url.js";
+import * as cheerio from "cheerio";
 import type {
   AtsBoardSource,
   ContactCandidate,
@@ -30,6 +31,7 @@ type AtsProvider =
   | "smartrecruiters"
   | "recruitee"
   | "personio"
+  | "wellfound"
   | "generic";
 
 function inferProvider(url: string): AtsProvider {
@@ -42,6 +44,7 @@ function inferProvider(url: string): AtsProvider {
   if (hostname.includes("smartrecruiters")) return "smartrecruiters";
   if (hostname.includes("recruitee")) return "recruitee";
   if (hostname.includes("personio")) return "personio";
+  if (hostname.includes("wellfound")) return "wellfound";
   return "generic";
 }
 
@@ -217,6 +220,125 @@ export async function crawlUrl(
   };
 }
 
+function absoluteWellfoundUrl(href: string): string {
+  if (!href) return "";
+  if (href.startsWith("http://") || href.startsWith("https://")) return href;
+  if (href.startsWith("//")) return `https:${href}`;
+  return `https://wellfound.com${href.startsWith("/") ? href : `/${href}`}`;
+}
+
+async function fetchWellfoundBoard(source: AtsBoardSource, deps: Dependencies): Promise<ListingCandidate[]> {
+  const response = await deps.fetch(source.url);
+  if (!response.ok) {
+    throw new Error(`Wellfound fetch failed for ${source.url} with ${response.status}`);
+  }
+  const html = await response.text();
+  const $ = cheerio.load(html);
+  const listings: ListingCandidate[] = [];
+
+  if ((source.lane ?? "company_watch") === "company_watch") {
+    const seen = new Set<string>();
+    $("a[href*='/company/']").each((_, element) => {
+      const anchor = $(element);
+      const title = anchor.text().trim();
+      const href = absoluteWellfoundUrl(anchor.attr("href") ?? "");
+      if (!title || !href || seen.has(href) || /view\s+all\s+\d+\s+jobs/i.test(title) || /company logo/i.test(title)) return;
+      seen.add(href);
+      const cardText = anchor.closest("div").parent().text().replace(/\s+/g, " ").trim();
+      listings.push({
+        lane: "company_watch",
+        externalId: href,
+        title,
+        titleFamily: "",
+        company: title,
+        location: /istanbul/i.test(cardText) ? "Istanbul" : "",
+        country: /turkey|türkiye/i.test(cardText) || /istanbul/i.test(cardText) ? "Turkey" : "",
+        language: /[ığüşöçİĞÜŞÖÇ]/.test(cardText) ? "tr" : "en",
+        workModel: inferWorkModel(cardText),
+        employmentType: "",
+        salary: "",
+        description: summarizeToLine(cardText, 1200),
+        url: href,
+        applyUrl: href,
+        source: "Wellfound",
+        sourceType: "ats",
+        sourceUrls: uniqueNonEmpty([source.url, href]),
+        companyUrl: href,
+        careersUrl: href.endsWith("/jobs") ? href : `${href}/jobs`,
+        aboutUrl: href,
+        teamUrl: "",
+        contactUrl: href,
+        pressUrl: "",
+        companyLinkedinUrl: "",
+        publicContacts: [],
+        postedAt: "",
+        validThrough: "",
+        department: "",
+        experienceYearsText: "",
+        remoteScope: "",
+        applicantLocationRequirements: [],
+        applicationContactName: "",
+        applicationContactEmail: "",
+        parseConfidence: 0.78,
+        sourceConfidence: 0.82,
+        isRealJobPage: false,
+        raw: { provider: "wellfound", type: "company_watch" },
+      });
+    });
+    return listings;
+  }
+
+  const seen = new Set<string>();
+  $("a[href*='/jobs/']").each((_, element) => {
+    const anchor = $(element);
+    const title = anchor.text().trim();
+    const href = absoluteWellfoundUrl(anchor.attr("href") ?? "");
+    if (!title || !href || seen.has(href) || /^find jobs$/i.test(title)) return;
+    seen.add(href);
+    const cardText = anchor.closest("div").parent().text().replace(/\s+/g, " ").trim();
+    listings.push({
+      lane: source.lane ?? "design_jobs",
+      externalId: href,
+      title,
+      titleFamily: "",
+      company: "",
+      location: /istanbul/i.test(cardText) ? "Istanbul" : /remote/i.test(cardText) ? "Remote" : "",
+      country: /turkey|türkiye/i.test(cardText) || /istanbul/i.test(cardText) ? "Turkey" : "",
+      language: /[ığüşöçİĞÜŞÖÇ]/.test(cardText) ? "tr" : "en",
+      workModel: inferWorkModel(cardText),
+      employmentType: /full-time/i.test(cardText) ? "full-time" : "",
+      salary: (cardText.match(/([$€£][^•]+(?:•\s*[^•]+)?)/)?.[1] ?? "").trim(),
+      description: summarizeToLine(cardText, 1200),
+      url: href,
+      applyUrl: href,
+      source: "Wellfound",
+      sourceType: "ats",
+      sourceUrls: uniqueNonEmpty([source.url, href]),
+      companyUrl: "",
+      careersUrl: source.url,
+      aboutUrl: "",
+      teamUrl: "",
+      contactUrl: "",
+      pressUrl: "",
+      companyLinkedinUrl: "",
+      publicContacts: [],
+      postedAt: (cardText.match(/(\d+\s+(?:day|days|week|weeks|month|months)\s+ago)/i)?.[1] ?? "").trim(),
+      validThrough: "",
+      department: "",
+      experienceYearsText: (cardText.match(/(\d+\s+years?\s+of\s+exp)/i)?.[1] ?? "").trim(),
+      remoteScope: /remote/i.test(cardText) ? "global" : "",
+      applicantLocationRequirements: [],
+      applicationContactName: "",
+      applicationContactEmail: "",
+      parseConfidence: 0.72,
+      sourceConfidence: 0.8,
+      isRealJobPage: true,
+      raw: { provider: "wellfound", type: "job" },
+    });
+  });
+  return listings;
+}
+
 async function discoverGenericBoard(source: AtsBoardSource, deps: Dependencies): Promise<ListingCandidate[]> {
   const outcome = await crawlUrl(source.url, source.lane ?? "company_watch", "ats", source.provider || inferProvider(source.url), deps);
   const direct = [...outcome.listings];
@@ -241,6 +363,8 @@ export async function discoverFromAtsBoard(source: AtsBoardSource, deps: Depende
       return fetchGreenhouseBoard(source, deps);
     case "lever":
       return fetchLeverBoard(source, deps);
+    case "wellfound":
+      return fetchWellfoundBoard(source, deps);
     default:
       return discoverGenericBoard(source, deps);
   }

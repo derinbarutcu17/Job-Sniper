@@ -92,7 +92,26 @@
         "url": "https://berlinstartupjobs.com/engineering/feed/"
       }
     ],
-    "atsBoards": []
+    "atsBoards": [
+      {
+        "name": "Wellfound Istanbul Startups",
+        "provider": "wellfound",
+        "url": "https://wellfound.com/startups/location/istanbul-istanbul",
+        "lane": "company_watch"
+      },
+      {
+        "name": "Wellfound Design Jobs",
+        "provider": "wellfound",
+        "url": "https://wellfound.com/location/istanbul-istanbul",
+        "lane": "design_jobs"
+      },
+      {
+        "name": "Wellfound AI / Engineering Jobs",
+        "provider": "wellfound",
+        "url": "https://wellfound.com/location/istanbul-istanbul",
+        "lane": "ai_coding_jobs"
+      }
+    ]
   },
   "blacklist": {
     "companies": [],
@@ -105,7 +124,7 @@
       "cto",
       "cfo"
     ],
-    "titleTerms": ["senior", "lead", "manager", "director", "head", "vp", "principal", "staff", "founder"],
+    "titleTerms": ["senior", "lead", "manager", "director", "head", "vp", "principal", "staff", "founder", "founding", "co-founder", "cofounder"],
     "softPenaltyTerms": ["stakeholder management", "people management", "budget ownership", "consulting"],
     "lanes": {
       "design_jobs": [],

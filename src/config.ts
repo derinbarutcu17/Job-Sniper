@@ -91,7 +91,11 @@ export const defaultConfig: SniperConfig = {
       { name: "Berlin Startup Jobs Design", url: "https://berlinstartupjobs.com/design/feed/" },
       { name: "Berlin Startup Jobs Engineering", url: "https://berlinstartupjobs.com/engineering/feed/" },
     ],
-    atsBoards: [],
+    atsBoards: [
+      { name: "Wellfound Istanbul Startups", provider: "wellfound", url: "https://wellfound.com/startups/location/istanbul-istanbul", lane: "company_watch" },
+      { name: "Wellfound Design Jobs", provider: "wellfound", url: "https://wellfound.com/location/istanbul-istanbul", lane: "design_jobs" },
+      { name: "Wellfound AI / Engineering Jobs", provider: "wellfound", url: "https://wellfound.com/location/istanbul-istanbul", lane: "ai_coding_jobs" }
+    ],
   },
   blacklist: {
     companies: [],
@@ -189,7 +193,7 @@ function migrateLegacyConfig(raw: Record<string, unknown>): Partial<SniperConfig
       rss: legacySources
         .filter((entry) => entry.type === "rss" && typeof entry.url === "string")
         .map((entry) => ({ name: String(entry.name ?? entry.url), url: String(entry.url) })),
-      atsBoards: [],
+      atsBoards: defaultConfig.sources.atsBoards,
     },
     blacklist: {
       companies: Array.isArray(blacklist.companies)

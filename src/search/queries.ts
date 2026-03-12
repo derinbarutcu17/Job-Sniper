@@ -1,6 +1,6 @@
 import type { ProfileSummary, SearchLane, SearchQuery, SniperConfig } from "../types.js";
 
-const ATS_SITES = ["greenhouse.io", "jobs.lever.co", "ashbyhq.com", "workable.com", "teamtailor.com", "smartrecruiters.com", "recruitee.com", "personio.de"];
+const ATS_SITES = ["greenhouse.io", "jobs.lever.co", "ashbyhq.com", "workable.com", "teamtailor.com", "smartrecruiters.com", "recruitee.com", "personio.de", "wellfound.com"];
 
 function laneRoleTokens(lane: SearchLane): string[] {
   switch (lane) {

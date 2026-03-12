@@ -265,6 +265,19 @@ export function createApp(baseDir: string, dependencies: AppDependencies = {}) {
         .join("\n");
     },
 
+    contacted() {
+      const contactedPath = path.join(baseDir, "data", "contacted-companies.json");
+      if (!fs.existsSync(contactedPath)) {
+        return "No contacted companies log yet.";
+      }
+      const rows = JSON.parse(fs.readFileSync(contactedPath, "utf8")) as Array<Record<string, unknown>>;
+      if (!rows.length) return "No contacted companies log yet.";
+      return rows
+        .slice(0, 50)
+        .map((row, index) => `${index + 1}. ${String(row.company ?? "")} | ${String(row.date_contacted ?? "")} | ${String(row.channel ?? "")}`)
+        .join("\n");
+    },
+
     async enrichCompany(companyRef: string) {
       return enrichCompanyRecord(baseDir, deps, companyRef);
     },
