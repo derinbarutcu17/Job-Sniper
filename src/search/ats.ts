@@ -242,7 +242,7 @@ async function fetchWellfoundBoard(source: AtsBoardSource, deps: Dependencies): 
       const anchor = $(element);
       const title = anchor.text().trim();
       const href = absoluteWellfoundUrl(anchor.attr("href") ?? "");
-      if (!title || !href || seen.has(href) || /view\s+all\s+\d+\s+jobs/i.test(title) || /company logo/i.test(title)) return;
+      if (!title || !href || seen.has(href) || href.endsWith('/jobs') || /^view\s+/i.test(title) || /view\s+all\s+\d+\s+jobs/i.test(title) || /company logo/i.test(title)) return;
       seen.add(href);
       const cardText = anchor.closest("div").parent().text().replace(/\s+/g, " ").trim();
       listings.push({
@@ -293,7 +293,7 @@ async function fetchWellfoundBoard(source: AtsBoardSource, deps: Dependencies): 
     const anchor = $(element);
     const title = anchor.text().trim();
     const href = absoluteWellfoundUrl(anchor.attr("href") ?? "");
-    if (!title || !href || seen.has(href) || /^find jobs$/i.test(title)) return;
+    if (!title || !href || seen.has(href) || /^find jobs$/i.test(title) || /^view\s+/i.test(title) || /company logo/i.test(title)) return;
     seen.add(href);
     const cardText = anchor.closest("div").parent().text().replace(/\s+/g, " ").trim();
     listings.push({

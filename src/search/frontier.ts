@@ -1,4 +1,4 @@
-import { mapLimit } from "../lib/async.js";
+import { mapLimit, withTimeout } from "../lib/async.js";
 import { domainFromUrl, domainTitleFingerprint, normalizeUrl, sourceFingerprint } from "../lib/url.js";
 import type { Dependencies, DiscoveryCandidate, SearchProvider, SearchQuery, SearchResult, SniperConfig } from "../types.js";
 
@@ -51,8 +51,10 @@ export async function gatherSearchCandidates(
     queries,
     config.search.searchProviderConcurrency,
     async (query) => {
-      const providerResults = await Promise.all(providers.map((provider) => provider.search(query, deps)));
-      return providerResults.flat();
+      const settled = await Promise.allSettled(
+        providers.map((provider) => withTimeout(provider.search(query, deps), config.search.timeoutMs, `search:${provider.name}`)),
+      );
+      return settled.flatMap((result) => (result.status === "fulfilled" ? result.value : []));
     },
   );
   const flattened = results.flat() as SearchResult[];

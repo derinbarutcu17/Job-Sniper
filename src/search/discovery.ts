@@ -10,7 +10,7 @@ import {
   upsertJob,
   upsertPageCache,
 } from "../db.js";
-import { mapLimit, withRetries } from "../lib/async.js";
+import { mapLimit, withRetries, withTimeout } from "../lib/async.js";
 import { createDefaultDependencies } from "../lib/http.js";
 import { canonicalCompanyKey, canonicalContactKey, domainFromUrl, normalizeUrl } from "../lib/url.js";
 import { loadProfile } from "../profile.js";
@@ -99,17 +99,25 @@ async function collectConfiguredListings(
     if (options.lane && options.lane !== "company_watch" && options.lane !== undefined) {
       // RSS feeds are still useful across job lanes, so keep them unless user requests company-only mode.
     }
-    const discovered = await discoverFromRss(source, deps);
-    listings.push(...discovered.filter((listing) => (options.companyWatchOnly ? listing.lane === "company_watch" : options.lane ? listing.lane === options.lane : true)));
-    sourceBreakdownAccumulator(sourceBreakdown, "rss", discovered.length);
+    try {
+      const discovered = await withTimeout(discoverFromRss(source, deps), config.search.timeoutMs, `rss:${source.name}`);
+      listings.push(...discovered.filter((listing) => (options.companyWatchOnly ? listing.lane === "company_watch" : options.lane ? listing.lane === options.lane : true)));
+      sourceBreakdownAccumulator(sourceBreakdown, "rss", discovered.length);
+    } catch {
+      sourceBreakdownAccumulator(sourceBreakdown, "rss_failed", 1);
+    }
   }
 
   for (const board of config.sources.atsBoards) {
     if (options.companyWatchOnly && (board.lane ?? "company_watch") !== "company_watch") continue;
     if (options.lane && (board.lane ?? "company_watch") !== options.lane) continue;
-    const discovered = await discoverFromAtsBoard(board, deps);
-    listings.push(...discovered);
-    sourceBreakdownAccumulator(sourceBreakdown, "ats", discovered.length);
+    try {
+      const discovered = await withTimeout(discoverFromAtsBoard(board, deps), config.search.timeoutMs, `ats:${board.name}`);
+      listings.push(...discovered);
+      sourceBreakdownAccumulator(sourceBreakdown, "ats", discovered.length);
+    } catch {
+      sourceBreakdownAccumulator(sourceBreakdown, "ats_failed", 1);
+    }
   }
 
   return listings;
@@ -152,6 +160,43 @@ export async function runDiscovery(
   let jsFallbacks = 0;
 
   const processListing = (listing: (typeof directListings)[number]) => {
+    if (listing.lane === "company_watch" && !listing.isRealJobPage) {
+      const companyUrl = listing.companyUrl || listing.url;
+      const companyInput: CompanyRecordInput = {
+        canonicalKey: canonicalCompanyKey(listing.company || listing.title || domainFromUrl(companyUrl), domainFromUrl(companyUrl)),
+        name: listing.company || listing.title,
+        domain: domainFromUrl(companyUrl),
+        location: listing.location,
+        companyUrl,
+        careersUrl: listing.careersUrl || `${companyUrl.replace(/\/$/, "")}/jobs`,
+        aboutUrl: listing.aboutUrl || companyUrl,
+        teamUrl: listing.teamUrl,
+        contactUrl: listing.contactUrl || companyUrl,
+        pressUrl: listing.pressUrl,
+        linkedinUrl: listing.companyLinkedinUrl,
+        description: listing.description,
+        sourceUrls: listing.sourceUrls,
+        publicContacts: listing.publicContacts.map((contact) => contact.email || contact.linkedinUrl || contact.sourceUrl),
+        startupSignals: [/startup|early stage|growth stage|actively hiring/i.test(listing.description) ? "startup_language" : ""].filter(Boolean),
+        hiringSignals: [/actively hiring|jobs|hiring/i.test(listing.description) ? "hiring_language" : ""].filter(Boolean),
+        founderNames: [],
+        cities: listing.location ? [listing.location] : [],
+        sizeBand: "",
+        stageText: /early stage|growth stage/i.test(listing.description) ? "startup signal" : "",
+        remotePolicy: listing.workModel === "remote" ? "remote-friendly" : "",
+        openRoleCount: /job/i.test(listing.description) ? 1 : 0,
+        startupScore: /startup|early stage|growth stage/i.test(listing.description) ? 10 : 0,
+        companyFitScore: 8,
+        hiringSignalScore: /actively hiring|jobs|hiring/i.test(listing.description) ? 8 : 0,
+        contactabilityScore: 0,
+        isStartupCandidate: /startup|early stage|growth stage/i.test(listing.description),
+        lastSeenAt: new Date().toISOString(),
+      };
+      upsertCompany(db, companyInput);
+      companiesTouched += 1;
+      return;
+    }
+
     const scored = scoreListing(config, profile, { ...listing, titleFamily: normalizeTitleFamily(listing.title) });
     const result = upsertJob(
       db,

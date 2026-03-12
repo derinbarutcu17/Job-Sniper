@@ -18,7 +18,38 @@ const TITLE_FAMILY_MAP: Array<{ family: string; terms: string[] }> = [
   { family: "GenAI Product Builder", terms: ["genai", "agent workflows", "ai product"] },
 ];
 
-const ALWAYS_EXCLUDE_TITLE_TERMS = ["senior", "lead", "manager", "director", "head", "vp", "principal", "staff"];
+const ALWAYS_EXCLUDE_TITLE_TERMS = [
+  "senior",
+  "lead",
+  "manager",
+  "director",
+  "head",
+  "vp",
+  "principal",
+  "staff",
+  "founder",
+  "founding",
+  "co-founder",
+  "cofounder",
+  "cto",
+  "cso",
+  "chief ",
+  "architect",
+];
+const HEAVY_MISMATCH_TERMS = [
+  "customer success",
+  "sales manager",
+  "growth partner",
+  "account executive",
+  "business development",
+  "legal",
+  "commission-only",
+  "devops",
+  "kubernetes",
+  "golang",
+  "backend",
+  "machine learning intern",
+];
 const CLOSED_ROLE_TERMS = [
   "applications closed",
   "application closed",
@@ -83,6 +114,13 @@ function gateEligibility(config: SniperConfig, profile: ProfileSummary, listing:
     breakdown.negatives.push("Role appears closed or expired.");
   } else {
     breakdown.gatesPassed.push("job_open");
+  }
+
+  if (HEAVY_MISMATCH_TERMS.some((term) => title.includes(normalizeText(term)) || description.includes(normalizeText(term)))) {
+    breakdown.gatesFailed.push("role_family_mismatch");
+    breakdown.negatives.push(`Role family mismatch: ${findFirstMatch(`${title} ${description}`, HEAVY_MISMATCH_TERMS)}`);
+  } else {
+    breakdown.gatesPassed.push("role_family_fit");
   }
 
   return breakdown;
