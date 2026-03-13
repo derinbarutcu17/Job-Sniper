@@ -103,9 +103,11 @@ async function enrichCompanyRecord(baseDir: string, deps: Dependencies, companyR
         canonicalKey: companyKey,
         name: String(company.name ?? ""),
         domain: String(company.domain ?? domainFromUrl(baseUrl)),
-        location: /istanbul/i.test(page.text)
-          ? "Istanbul"
-          : String(company.location ?? ""),
+        location: /berlin/i.test(page.text)
+          ? "Berlin"
+          : /germany|deutschland/i.test(page.text)
+            ? "Germany"
+            : String(company.location ?? ""),
         companyUrl: baseUrl,
         careersUrl: /careers|jobs/i.test(url) ? url : String(company.careers_url ?? ""),
         aboutUrl: /about/i.test(url) ? url : String(company.about_url ?? ""),
@@ -121,7 +123,7 @@ async function enrichCompanyRecord(baseDir: string, deps: Dependencies, companyR
         startupSignals: /seed|series a|founding|small team/i.test(page.text) ? ["startup_language"] : [],
         hiringSignals: /hiring|careers|open roles|jobs/i.test(page.text) ? ["hiring_language"] : [],
         founderNames: [],
-        cities: /istanbul/i.test(page.text) ? ["Istanbul"] : [],
+        cities: /berlin/i.test(page.text) ? ["Berlin"] : [],
         sizeBand: String(company.size_band ?? ""),
         stageText: /seed|series a|founding/i.test(page.text) ? "startup signal" : String(company.stage_text ?? ""),
         remotePolicy: /remote|uzaktan|hybrid/i.test(page.text) ? "remote-friendly" : String(company.remote_policy ?? ""),

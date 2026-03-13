@@ -9,10 +9,12 @@ import type {
   ListingCandidate,
   PageRecord,
   SearchLane,
+  SearchQuery,
   SearchResult,
   SourceType,
 } from "../types.js";
 import { buildPageRecord, extractContacts, parseCareerHub, parseGenericListing, parseJsonLdListings } from "./extract.js";
+import { getSearchProviders } from "./web.js";
 
 export interface CrawlOutcome {
   page: PageRecord;
@@ -81,8 +83,8 @@ function buildAtsListing(
     titleFamily: "",
     company: opts.company || source.name,
     location,
-    country: /turk/i.test(location) ? "Turkey" : "",
-    language: /[ığüşöçİĞÜŞÖÇ]/.test(description) ? "tr" : "en",
+    country: /germany|deutschland/i.test(location) ? "Germany" : "",
+    language: /\b(deutsch|german)\b/i.test(description) ? "de" : "en",
     workModel: inferWorkModel(description),
     employmentType: opts.employmentType || "",
     salary: "",
@@ -187,6 +189,178 @@ function mergeStructuredContacts(listings: ListingCandidate[]): ListingCandidate
   });
 }
 
+function wellfoundChallengeDetected(html: string): boolean {
+  const lower = html.toLowerCase();
+  return (
+    lower.includes("datadome") ||
+    lower.includes("captcha-delivery.com") ||
+    lower.includes("geo.captcha-delivery.com") ||
+    lower.includes("datadome captcha") ||
+    lower.includes("please enable js") ||
+    lower.includes("disable any ad blocker")
+  );
+}
+
+function deriveTitleAndCompany(title: string): { title: string; company: string } {
+  const cleaned = title
+    .replace(/\s*\|\s*wellfound.*$/i, "")
+    .replace(/\s*-\s*wellfound.*$/i, "")
+    .trim();
+  const atMatch = cleaned.match(/^(.*?)\s+at\s+(.*)$/i);
+  if (atMatch) {
+    return { title: atMatch[1]!.trim(), company: atMatch[2]!.trim() };
+  }
+  const dashMatch = cleaned.match(/^(.*?)\s+[–-]\s+(.*?)$/);
+  if (dashMatch) {
+    return { title: dashMatch[1]!.trim(), company: dashMatch[2]!.trim() };
+  }
+  return { title: cleaned, company: "" };
+}
+
+function buildWellfoundListingFromSearchResult(source: AtsBoardSource, result: SearchResult): ListingCandidate {
+  const parsed = deriveTitleAndCompany(result.title);
+  const description = summarizeToLine(result.snippet, 1000);
+  const location =
+    /berlin/i.test(result.snippet) ? "Berlin" :
+    /germany|deutschland/i.test(result.snippet) ? "Germany" :
+    /remote/i.test(result.snippet) ? "Remote" :
+    "";
+  return {
+    lane: source.lane ?? "design_jobs",
+    externalId: result.url,
+    title: parsed.title || result.title,
+    titleFamily: "",
+    company: parsed.company || "Wellfound company",
+    location,
+    country: /berlin|germany|deutschland/i.test(`${location} ${result.snippet}`) ? "Germany" : "",
+    language: /\b(deutsch|german)\b/i.test(result.snippet) ? "de" : "en",
+    workModel: inferWorkModel(result.snippet),
+    employmentType: /full[- ]time/i.test(result.snippet) ? "full-time" : "",
+    salary: "",
+    description,
+    url: result.url,
+    applyUrl: result.url,
+    source: "Wellfound search fallback",
+    sourceType: "search",
+    sourceUrls: uniqueNonEmpty([source.url, result.url]),
+    companyUrl: result.url.includes("/company/") ? result.url : "",
+    careersUrl: source.url,
+    aboutUrl: "",
+    teamUrl: "",
+    contactUrl: "",
+    pressUrl: "",
+    companyLinkedinUrl: "",
+    publicContacts: [],
+    postedAt: "",
+    validThrough: "",
+    department: "",
+    experienceYearsText: (result.snippet.match(/(\d+\+?\s+years?)/i)?.[1] ?? "").trim(),
+    remoteScope: /remote/i.test(result.snippet) ? "global" : "",
+    applicantLocationRequirements: [],
+    applicationContactName: "",
+    applicationContactEmail: "",
+    parseConfidence: 0.38,
+    sourceConfidence: 0.62,
+    isRealJobPage: false,
+    raw: { provider: "wellfound", fallback: "search_result", query: result.query },
+  };
+}
+
+function buildWellfoundCompanyFromSearchResult(source: AtsBoardSource, result: SearchResult): ListingCandidate {
+  const cleaned = result.title
+    .replace(/\s*\|\s*wellfound.*$/i, "")
+    .replace(/\s*-\s*wellfound.*$/i, "")
+    .trim();
+  const location =
+    /berlin/i.test(result.snippet) ? "Berlin" :
+    /germany|deutschland/i.test(result.snippet) ? "Germany" :
+    "";
+  return {
+    lane: "company_watch",
+    externalId: result.url,
+    title: cleaned,
+    titleFamily: "",
+    company: cleaned,
+    location,
+    country: /berlin|germany|deutschland/i.test(`${location} ${result.snippet}`) ? "Germany" : "",
+    language: /\b(deutsch|german)\b/i.test(result.snippet) ? "de" : "en",
+    workModel: inferWorkModel(result.snippet),
+    employmentType: "",
+    salary: "",
+    description: summarizeToLine(result.snippet, 1000),
+    url: result.url,
+    applyUrl: result.url,
+    source: "Wellfound search fallback",
+    sourceType: "search",
+    sourceUrls: uniqueNonEmpty([source.url, result.url]),
+    companyUrl: result.url,
+    careersUrl: result.url.endsWith("/jobs") ? result.url : `${result.url.replace(/\/$/, "")}/jobs`,
+    aboutUrl: result.url,
+    teamUrl: "",
+    contactUrl: result.url,
+    pressUrl: "",
+    companyLinkedinUrl: "",
+    publicContacts: [],
+    postedAt: "",
+    validThrough: "",
+    department: "",
+    experienceYearsText: "",
+    remoteScope: "",
+    applicantLocationRequirements: [],
+    applicationContactName: "",
+    applicationContactEmail: "",
+    parseConfidence: 0.34,
+    sourceConfidence: 0.6,
+    isRealJobPage: false,
+    raw: { provider: "wellfound", fallback: "search_result", query: result.query, type: "company_watch" },
+  };
+}
+
+function buildWellfoundFallbackQueries(source: AtsBoardSource): SearchQuery[] {
+  const lane = source.lane ?? "company_watch";
+  if (lane === "company_watch") {
+    return [
+      { lane, locale: "en", family: "company", query: 'site:wellfound.com/company Berlin startup', providerHints: ["wellfound"] },
+      { lane, locale: "en", family: "company", query: 'site:wellfound.com/company "Berlin" AI startup', providerHints: ["wellfound"] },
+    ];
+  }
+  if (lane === "design_jobs") {
+    return [
+      { lane, locale: "en", family: "job", query: 'site:wellfound.com/jobs "product designer" "Berlin"', providerHints: ["wellfound"] },
+      { lane, locale: "en", family: "job", query: 'site:wellfound.com/jobs "design engineer" Germany', providerHints: ["wellfound"] },
+    ];
+  }
+  return [
+    { lane, locale: "en", family: "job", query: 'site:wellfound.com/jobs "AI engineer" "Berlin"', providerHints: ["wellfound"] },
+    { lane, locale: "en", family: "job", query: 'site:wellfound.com/jobs "agent engineer" Germany', providerHints: ["wellfound"] },
+  ];
+}
+
+async function fetchWellfoundFromSearchFallback(source: AtsBoardSource, deps: Dependencies): Promise<ListingCandidate[]> {
+  const providers = getSearchProviders();
+  const queries = buildWellfoundFallbackQueries(source);
+  const results: SearchResult[] = [];
+  const providerQueries = queries.flatMap((query) => providers.map((provider) => ({ query, provider })));
+  const batches = await mapLimit(providerQueries, 3, async ({ query, provider }) => {
+    try {
+      return (await provider.search(query, deps)).filter((result) => /wellfound\.com/i.test(result.url));
+    } catch {
+      return [];
+    }
+  });
+  results.push(...batches.flat());
+
+  const deduped = new Map<string, SearchResult>();
+  for (const result of results) {
+    deduped.set(normalizeUrl(result.url), result);
+  }
+  const uniqueResults = [...deduped.values()].slice(0, 25);
+  if ((source.lane ?? "company_watch") === "company_watch") {
+    return uniqueResults.map((result) => buildWellfoundCompanyFromSearchResult(source, result));
+  }
+  return uniqueResults.map((result) => buildWellfoundListingFromSearchResult(source, result));
+}
+
 export async function crawlUrl(
   url: string,
   lane: SearchLane,
@@ -230,9 +404,12 @@ function absoluteWellfoundUrl(href: string): string {
 async function fetchWellfoundBoard(source: AtsBoardSource, deps: Dependencies): Promise<ListingCandidate[]> {
   const response = await deps.fetch(source.url);
   if (!response.ok) {
-    throw new Error(`Wellfound fetch failed for ${source.url} with ${response.status}`);
+    return fetchWellfoundFromSearchFallback(source, deps);
   }
   const html = await response.text();
+  if (wellfoundChallengeDetected(html)) {
+    return fetchWellfoundFromSearchFallback(source, deps);
+  }
   const $ = cheerio.load(html);
   const listings: ListingCandidate[] = [];
 
@@ -251,9 +428,9 @@ async function fetchWellfoundBoard(source: AtsBoardSource, deps: Dependencies): 
         title,
         titleFamily: "",
         company: title,
-        location: /istanbul/i.test(cardText) ? "Istanbul" : "",
-        country: /turkey|türkiye/i.test(cardText) || /istanbul/i.test(cardText) ? "Turkey" : "",
-        language: /[ığüşöçİĞÜŞÖÇ]/.test(cardText) ? "tr" : "en",
+        location: /berlin/i.test(cardText) ? "Berlin" : "",
+        country: /germany|deutschland/i.test(cardText) || /berlin/i.test(cardText) ? "Germany" : "",
+        language: /\b(deutsch|german)\b/i.test(cardText) ? "de" : "en",
         workModel: inferWorkModel(cardText),
         employmentType: "",
         salary: "",
@@ -302,9 +479,9 @@ async function fetchWellfoundBoard(source: AtsBoardSource, deps: Dependencies): 
       title,
       titleFamily: "",
       company: "",
-      location: /istanbul/i.test(cardText) ? "Istanbul" : /remote/i.test(cardText) ? "Remote" : "",
-      country: /turkey|türkiye/i.test(cardText) || /istanbul/i.test(cardText) ? "Turkey" : "",
-      language: /[ığüşöçİĞÜŞÖÇ]/.test(cardText) ? "tr" : "en",
+      location: /berlin/i.test(cardText) ? "Berlin" : /remote/i.test(cardText) ? "Remote" : "",
+      country: /germany|deutschland/i.test(cardText) || /berlin/i.test(cardText) ? "Germany" : "",
+      language: /\b(deutsch|german)\b/i.test(cardText) ? "de" : "en",
       workModel: inferWorkModel(cardText),
       employmentType: /full-time/i.test(cardText) ? "full-time" : "",
       salary: (cardText.match(/([$€£][^•]+(?:•\s*[^•]+)?)/)?.[1] ?? "").trim(),
@@ -336,7 +513,10 @@ async function fetchWellfoundBoard(source: AtsBoardSource, deps: Dependencies): 
       raw: { provider: "wellfound", type: "job" },
     });
   });
-  return listings;
+  if (listings.length) {
+    return listings;
+  }
+  return fetchWellfoundFromSearchFallback(source, deps);
 }
 
 async function discoverGenericBoard(source: AtsBoardSource, deps: Dependencies): Promise<ListingCandidate[]> {

@@ -141,14 +141,13 @@ export function deriveProfileSummary(content: string): ProfileSummary {
 
   const seniority = deriveTargetSeniority(content);
   const preferredLocations = [
-    ...(includesAny(normalized, ["istanbul"]) ? ["Istanbul"] : []),
     ...(includesAny(normalized, ["berlin"]) ? ["Berlin"] : []),
+    ...(includesAny(normalized, ["germany", "deutschland", "almanya"]) ? ["Germany"] : []),
     ...(includesAny(normalized, ["remote", "uzaktan"]) ? ["Remote"] : []),
-    ...(includesAny(normalized, ["turkiye", "türkiye", "turkey"]) ? ["Turkey"] : []),
   ];
 
   const languagePreference = [
-    ...(includesAny(normalized, ["turkish", "türkçe", "turkce"]) ? ["tr"] : []),
+    ...(includesAny(normalized, ["german", "deutsch"]) ? ["de"] : []),
     ...(includesAny(normalized, ["english", "ingilizce"]) ? ["en"] : []),
   ];
 
@@ -168,7 +167,7 @@ export function deriveProfileSummary(content: string): ProfileSummary {
     allowStretchRoles: seniority.allowStretchRoles,
     avoidTitleTerms: seniority.avoidTitleTerms,
     preferredLocations,
-    languagePreference: languagePreference.length ? languagePreference : ["tr", "en"],
+    languagePreference: languagePreference.length ? languagePreference : ["en", "de"],
     toolSignals: [...new Set(toolSignals)],
     summary: summarizeToLine(`${focusHint ? `${focusHint}. ` : ""}${content}`, 400),
   };

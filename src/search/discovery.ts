@@ -45,8 +45,8 @@ function filterQueries(baseDir: string, lane?: SearchLane, companyWatchOnly = fa
 function buildCompanyInput(candidate: DiscoveryCandidate, pageText: string, contacts: ContactCandidate[]): CompanyRecordInput {
   const domain = domainFromUrl(candidate.url);
   const location =
-    /istanbul/i.test(pageText) ? "Istanbul" :
-    /turkiye|türkiye|turkey/i.test(pageText) ? "Turkey" :
+    /berlin/i.test(pageText) ? "Berlin" :
+    /germany|deutschland/i.test(pageText) ? "Germany" :
     "";
   const startupSignals = [
     ...(/seed|series a|founding|small team|0->1|0-1/i.test(pageText) ? ["startup_language"] : []),
