@@ -4,12 +4,12 @@
 
 It runs locally, keeps a SQLite database as the source of truth, searches the public web plus common ATS platforms, ranks roles against your CV, extracts public company/contact signals, and syncs the results into an AI-editable Google Sheet.
 
-This repo is now tuned for a Berlin/Germany-first workflow:
+It is meant to be customized:
 
-- Berlin and Germany opportunities are prioritized
-- remote roles still stay in the pipeline
-- design and AI-coding roles are tracked together
-- company/contact enrichment is optimized for public cold-outreach surfaces
+- choose your own cities, countries, and remote preferences
+- tailor the search lanes to design, engineering, AI, or startup-company scouting
+- rank jobs against any profile, not one hardcoded persona
+- use the sheet and contact outputs as a general job-intel and outreach workflow
 
 ## What it does
 
@@ -71,6 +71,28 @@ Runtime state lives in:
 - `profile/profile.json`
 - `data/sniper.db`
 
+## Customization
+
+This tool is not tied to one person, one city, or one hiring market.
+
+The main customization points are:
+
+- `config.json`
+  Set your target cities, countries, remote preferences, RSS feeds, ATS boards, blacklist rules, and Google Sheets tabs
+- `profile/cv.md` and `profile/profile.json`
+  Onboard a different person, resume, or job-search strategy
+- search lanes
+  Enable or disable `design_jobs`, `ai_coding_jobs`, and `company_watch`
+- sheet workflow
+  Adapt the `Jobs`, `Companies`, and `Contacts` tabs to your own research and outreach process
+
+Typical examples:
+
+- switch from Berlin to London, New York, Dubai, or remote-only
+- tune the system for product design, frontend, AI engineering, or startup scouting
+- use it for one candidate, a recruiter workflow, or a small career-coaching operation
+- treat it as a research tool only, or as a shortlist-plus-outreach machine
+
 ## Basic workflow
 
 ### 1. Onboard your profile
@@ -78,7 +100,7 @@ Runtime state lives in:
 Paste CV text directly:
 
 ```text
-/sniper onboard I am a product designer and AI builder based in Berlin...
+/sniper onboard I am a product designer focused on fintech, based in London, open to hybrid and remote roles...
 ```
 
 Or point it at a local file:
@@ -200,7 +222,7 @@ Examples:
 Example prompt to OpenClaw:
 
 ```text
-Open the Claw Job Sniper Google Sheet, find the high-priority Berlin design and AI roles, visit the job pages, and draft concise outreach emails for the top 3.
+Open the Claw Job Sniper Google Sheet, find the high-priority design and AI roles, visit the job pages, and draft concise outreach emails for the top 3.
 ```
 
 ### Workflow 4: ChatGPT or Gemini reading the outputs
@@ -215,7 +237,7 @@ There are a few practical ways to let ChatGPT or Gemini work with the results:
 Typical prompts:
 
 ```text
-Here is my Jobs sheet export. Rank the top 10 Berlin roles by likely interview conversion.
+Here is my Jobs sheet export. Rank the top 10 roles by likely interview conversion.
 ```
 
 ```text
@@ -296,9 +318,9 @@ That gives you:
 - human-editable workflow state
 - a clean handoff into outreach and application ops
 
-## Berlin startup workflow
+## Startup outreach workflow
 
-If you are using this as a Berlin startup cold-email machine, the tight loop is:
+If you are using this as a startup cold-email machine, the tight loop is:
 
 1. `/sniper onboard ...`
 2. `/sniper run --company-watch`
@@ -310,7 +332,7 @@ Then work from the sheet:
 
 - `Companies` tab = startup/company shortlist
 - `Contacts` tab = public inboxes, LinkedIn company pages, and contact forms
-- `Jobs` tab = best Berlin role matches with `best_contact` where available
+- `Jobs` tab = best role matches with `best_contact` where available
 
 For a stronger pass on a specific company:
 
@@ -321,11 +343,11 @@ For a stronger pass on a specific company:
 Useful prompts on top of that:
 
 ```text
-Open the Companies tab, shortlist the Berlin startups with the strongest public contact surfaces, then draft 5 concise cold emails.
+Open the Companies tab, shortlist the startups with the strongest public contact surfaces, then draft 5 concise cold emails.
 ```
 
 ```text
-Open the Jobs tab, find Berlin startup roles with a populated best_contact, and draft outreach for the top 3.
+Open the Jobs tab, find startup roles with a populated best_contact, and draft outreach for the top 3.
 ```
 
 ## Privacy and secrets

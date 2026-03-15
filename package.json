@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "OpenClaw-native job intelligence skill for Berlin-first design, AI coding, and startup outreach workflows.",
+  "description": "OpenClaw-native job intelligence skill for design, AI coding, and startup outreach workflows.",
   "scripts": {
     "sniper": "node ./scripts/run-sniper.mjs",
     "test": "vitest run",
