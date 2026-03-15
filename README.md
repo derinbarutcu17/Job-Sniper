@@ -29,9 +29,9 @@ You act as the director. The agent figures out which commands to run and handles
 - Google Sheets sync with manual columns preserved
 - OpenClaw-friendly command surface for scouting, reviewing, and drafting
 
-## What it is now
+## What it is
 
-This repo now runs as a role-pack-driven engine.
+This repo runs as a role-pack-driven engine.
 
 That means:
 
@@ -102,8 +102,6 @@ OpenClaw should expose this as `/sniper`.
 /sniper stats
 /sniper export json [path]
 ```
-
-Older `!sniper ...` examples are deprecated.
 
 ## Role packs and customization
 
