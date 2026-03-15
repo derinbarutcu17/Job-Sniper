@@ -65,7 +65,7 @@ Quick smoke check:
 npm run sniper -- help
 ```
 
-Runtime state lives in:
+Local runtime state lives in ignored files such as:
 
 - `profile/cv.md`
 - `profile/profile.json`
@@ -80,7 +80,7 @@ The main customization points are:
 - `config.json`
   Set your target cities, countries, remote preferences, RSS feeds, ATS boards, blacklist rules, and Google Sheets tabs
 - `profile/cv.md` and `profile/profile.json`
-  Onboard a different person, resume, or job-search strategy
+  Local runtime profile files created and updated through onboarding
 - search lanes
   Enable or disable `design_jobs`, `ai_coding_jobs`, and `company_watch`
 - sheet workflow

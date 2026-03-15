@@ -1,46 +1,38 @@
 ---
 name: sniper
-description: "Istanbul-first job intelligence for design and AI coding roles. Use /sniper with subcommands like onboard, run, digest, draft, companies, and sheet sync."
+description: "Local job-intelligence and outreach workflow for jobs, companies, and public hiring contacts. Use /sniper with subcommands like onboard, run, digest, companies, and sheet sync."
 user-invocable: true
 metadata: { "openclaw": { "requires": { "bins": ["node", "npm"] } } }
 ---
 
 # Sniper
 
-Use this skill when the user wants to hunt for jobs, companies, and public hiring contacts.
+Use this skill when the user wants to discover jobs, track companies, gather public hiring contacts, and sync the results into Google Sheets.
 
-## Command surface
-
-Run the local CLI via:
+Run the local CLI with:
 
 ```bash
 node {baseDir}/scripts/run-sniper.mjs <subcommand> [args...]
 ```
 
-Supported subcommands:
-
-- `onboard <text-or-path>`
-- `run`
-- `digest [limit]`
-- `draft <job-id>`
-- `blacklist add <term>`
-- `sheet sync`
-- `sheet pull`
-- `companies [limit]`
-
-## Behavior rules
+Core rules:
 
 - Keep the local SQLite database as the source of truth.
-- Prioritize Istanbul and Turkish listings first, but keep relevant global remote roles too.
-- Collect only public contacts and public company pages.
+- Collect only public job, company, and contact data.
 - Never send applications or email anyone automatically.
-- If the user asks to sync or pull Google Sheets data, use the configured service account env vars.
+- Use Google Sheets only when the user asks to sync or pull.
 
-## Environment
+Primary commands:
 
-Optional env vars for Google Sheets:
+- `onboard <text-or-path>`
+- `run [--lane <lane>] [--company-watch]`
+- `digest [limit]`
+- `shortlist [limit]`
+- `draft <job-id>`
+- `companies [limit]`
+- `contacts [company-id-or-key]`
+- `enrich company <company-id-or-key>`
+- `sheet sync`
+- `sheet pull`
 
-- `SNIPER_GOOGLE_SERVICE_ACCOUNT_PATH`
-- `SNIPER_GOOGLE_SERVICE_ACCOUNT_JSON`
-- `SNIPER_GOOGLE_SHEET_ID`
-- `SNIPER_GOOGLE_FOLDER_ID`
+See `README.md` for setup, customization, workflow examples, privacy guidance, and configuration details.
