@@ -1,6 +1,6 @@
 # Claw Job Sniper
 
-`claw-job-sniper` is an OpenClaw-native job intelligence skill for people hunting design roles, AI coding roles, and companies worth reaching out to.
+`claw-job-sniper` is an OpenClaw-native job intelligence skill for people hunting roles, companies, and public hiring contacts across different fields.
 
 It runs locally, keeps a SQLite database as the source of truth, searches the public web plus common ATS platforms, ranks roles against your CV, extracts public company/contact signals, and syncs the results into an AI-editable Google Sheet.
 
