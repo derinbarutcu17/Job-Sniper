@@ -26,14 +26,6 @@ That means:
 - the shipped presets are just built-in packs, not special-case code paths
 - you can define new lanes for other fields in `config.json` without editing the scoring engine, query builder, or CLI
 
-The repo still ships with three first-party presets:
-
-- `design_jobs`
-- `ai_coding_jobs`
-- `company_watch`
-
-They exist to preserve the current working workflow, but they are examples of the engine, not the limit of it.
-
 ## What it does
 
 - Onboards a profile from raw text or a local file path
