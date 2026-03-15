@@ -6,7 +6,20 @@
 
 `claw-job-sniper` is a local-first OpenClaw skill for finding jobs, tracking companies, collecting public hiring contacts, and running a structured outreach workflow.
 
-It keeps a SQLite database as the source of truth, searches the public web plus common ATS surfaces, ranks opportunities against an onboarded profile, and syncs the output into Google Sheets.
+It keeps a SQLite database as the source of truth, searches the public web plus common ATS surfaces, ranks opportunities against your profile, and syncs the output into Google Sheets.
+
+## Talk to It
+
+You do not need to memorize a CLI manual to use this. Because it is an OpenClaw skill, you can just talk to your agent naturally.
+
+Tell OpenClaw what you want:
+
+- "Find me senior frontend roles in London."
+- "Look at the companies we found yesterday and pull the public contacts for the top three."
+- "Draft a cover letter for the Stripe job."
+- "Sync our current shortlist to Google Sheets."
+
+You act as the director. The agent figures out which commands to run and handles the heavy lifting behind the scenes.
 
 ## At a glance
 
