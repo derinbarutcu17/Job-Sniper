@@ -27,6 +27,9 @@ export function makeFetchStub(routes: Record<string, { body: string; status?: nu
       if (!route && String(input).startsWith("https://html.duckduckgo.com/html/?q=")) {
         return response("<html><body></body></html>", 200);
       }
+      if (!route && String(input).startsWith("https://search.brave.com/search?q=")) {
+        return response("<html><body></body></html>", 200);
+      }
       if (!route) {
         throw new Error(`Missing route for ${input}`);
       }

@@ -40,8 +40,8 @@ function profile(): ProfileSummary {
     targetSeniority: "junior",
     allowStretchRoles: false,
     avoidTitleTerms: ["senior", "lead", "manager"],
-    preferredLocations: ["Istanbul"],
-    languagePreference: ["tr", "en"],
+    preferredLocations: ["Berlin", "Germany"],
+    languagePreference: ["en", "de"],
     toolSignals: ["figma"],
     summary: "designer",
   };
@@ -54,9 +54,9 @@ function listing(): ListingCandidate {
     title: "Product Designer",
     titleFamily: "Product Designer",
     company: "ModaAI",
-    location: "Istanbul",
-    country: "Turkey",
-    language: "tr",
+    location: "Berlin",
+    country: "Germany",
+    language: "en",
     workModel: "hybrid",
     employmentType: "full-time",
     salary: "",
@@ -91,6 +91,8 @@ function listing(): ListingCandidate {
 
 describe("sheets sync", () => {
   it("creates full schema and preserves manual columns on repeat sync", async () => {
+    const previousSheetId = process.env.SNIPER_GOOGLE_SHEET_ID;
+    delete process.env.SNIPER_GOOGLE_SHEET_ID;
     const baseDir = makeTempDir();
     const gateway = new FakeSheetGateway();
     const { db } = openDatabase(baseDir);
@@ -159,9 +161,13 @@ describe("sheets sync", () => {
     expect(gateway.headers.get("RunMetrics")).toContain("total_discovered");
     expect(after).toHaveLength(1);
     expect(after[0]?.owner_notes).toBe("call founder");
+    if (previousSheetId) {
+      process.env.SNIPER_GOOGLE_SHEET_ID = previousSheetId;
+    }
   });
 
   it("pulls manual columns back into sqlite by canonical key", async () => {
+    const previousSheetId = process.env.SNIPER_GOOGLE_SHEET_ID;
     const baseDir = makeTempDir();
     const gateway = new FakeSheetGateway();
     const { db } = openDatabase(baseDir);
@@ -194,6 +200,10 @@ describe("sheets sync", () => {
     expect(job.manual_status).toBe("interested");
     expect(job.priority).toBe("high");
     expect(job.manual_contact_override).toBe("founder@moda.ai");
-    delete process.env.SNIPER_GOOGLE_SHEET_ID;
+    if (previousSheetId) {
+      process.env.SNIPER_GOOGLE_SHEET_ID = previousSheetId;
+    } else {
+      delete process.env.SNIPER_GOOGLE_SHEET_ID;
+    }
   });
 });

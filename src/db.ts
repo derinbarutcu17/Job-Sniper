@@ -219,6 +219,50 @@ function createSchema(db: Database.Database): void {
   `);
 }
 
+function patchExistingSchema(db: Database.Database): void {
+  const companyColumns = [
+    ["about_url", "TEXT DEFAULT ''"],
+    ["team_url", "TEXT DEFAULT ''"],
+    ["contact_url", "TEXT DEFAULT ''"],
+    ["press_url", "TEXT DEFAULT ''"],
+    ["startup_signals", "TEXT DEFAULT '[]'"],
+    ["hiring_signals", "TEXT DEFAULT '[]'"],
+    ["founder_names", "TEXT DEFAULT '[]'"],
+    ["cities", "TEXT DEFAULT '[]'"],
+    ["size_band", "TEXT DEFAULT ''"],
+    ["stage_text", "TEXT DEFAULT ''"],
+    ["remote_policy", "TEXT DEFAULT ''"],
+    ["open_role_count", "INTEGER DEFAULT 0"],
+    ["startup_score", "REAL DEFAULT 0"],
+    ["company_fit_score", "REAL DEFAULT 0"],
+    ["hiring_signal_score", "REAL DEFAULT 0"],
+    ["contactability_score", "REAL DEFAULT 0"],
+    ["is_startup_candidate", "INTEGER DEFAULT 0"],
+  ] as const;
+
+  const contactColumns = [
+    ["contact_kind", "TEXT DEFAULT ''"],
+    ["confidence", "TEXT DEFAULT 'low'"],
+    ["evidence_type", "TEXT DEFAULT ''"],
+    ["evidence_excerpt", "TEXT DEFAULT ''"],
+    ["is_public", "INTEGER DEFAULT 1"],
+    ["last_verified_at", "TEXT DEFAULT ''"],
+    ["page_type", "TEXT DEFAULT 'generic'"],
+  ] as const;
+
+  for (const [name, type] of companyColumns) {
+    if (!hasColumn(db, "companies", name)) {
+      db.exec(`ALTER TABLE companies ADD COLUMN ${name} ${type}`);
+    }
+  }
+
+  for (const [name, type] of contactColumns) {
+    if (!hasColumn(db, "contacts", name)) {
+      db.exec(`ALTER TABLE contacts ADD COLUMN ${name} ${type}`);
+    }
+  }
+}
+
 function migrateLegacyJobs(db: Database.Database): void {
   const legacyExists = db
     .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'jobs'")
@@ -231,6 +275,7 @@ function migrateLegacyJobs(db: Database.Database): void {
 
   if (hasColumn(db, "jobs", "duplicate_group_key")) {
     createSchema(db);
+    patchExistingSchema(db);
     return;
   }
 

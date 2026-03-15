@@ -14,6 +14,9 @@ function laneRoleTokens(lane: SearchLane): string[] {
 }
 
 export function buildQueries(config: SniperConfig, profile: ProfileSummary): SearchQuery[] {
+  if (config.search.maxQueriesPerLane <= 0) {
+    return [];
+  }
   const queries: SearchQuery[] = [];
   (Object.keys(config.lanes) as SearchLane[]).forEach((lane) => {
     if (!config.lanes[lane].enabled) return;

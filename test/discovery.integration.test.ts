@@ -7,7 +7,7 @@ import { runDiscovery } from "../src/search/discovery.js";
 import { fixture, makeFetchStub, makeTempDir } from "./helpers.js";
 
 describe("discovery integration", () => {
-  it("stores Turkish and remote AI jobs from web search plus RSS", async () => {
+  it("stores Berlin and remote AI jobs from web search plus RSS", async () => {
     const baseDir = makeTempDir();
     fs.writeFileSync(
       path.join(baseDir, "config.json"),
@@ -18,18 +18,18 @@ describe("discovery integration", () => {
             maxQueriesPerLane: 1,
             minScoreThreshold: 20,
             browserFallback: false,
-            priorityCities: ["Istanbul", "İstanbul"],
-            priorityCountries: ["Turkey", "Türkiye"],
+            priorityCities: ["Berlin"],
+            priorityCountries: ["Germany", "Deutschland"],
           },
           lanes: {
             design_jobs: {
               enabled: true,
-              queries: { tr: ["design"], en: [] },
+              queries: { tr: [], en: ["design berlin"] },
               keywords: ["figma", "ux"],
             },
             ai_coding_jobs: {
               enabled: true,
-              queries: { tr: [], en: ["ai"] },
+              queries: { tr: [], en: ["ai berlin"] },
               keywords: ["agent", "typescript", "python"],
             },
             company_watch: {
@@ -59,11 +59,11 @@ describe("discovery integration", () => {
       ),
     );
 
-    await onboardProfile(baseDir, "I build product design systems with Figma and AI tools in Istanbul. Also comfortable with TypeScript and Python.");
+    await onboardProfile(baseDir, "I build product design systems with Figma and AI tools in Berlin. Also comfortable with TypeScript and Python.");
 
     const deps = makeFetchStub({
-      "https://html.duckduckgo.com/html/?q=design": { body: fixture("search-results.html") },
-      "https://html.duckduckgo.com/html/?q=ai": { body: fixture("search-results.html") },
+      "https://html.duckduckgo.com/html/?q=design%20berlin": { body: fixture("search-results.html") },
+      "https://html.duckduckgo.com/html/?q=ai%20berlin": { body: fixture("search-results.html") },
       "https://jobs.example.com/turkish-design-role": { body: fixture("turkish-job.html") },
       "https://jobs.example.com/agent-engineer": { body: fixture("remote-ai-job.html") },
       "https://feed.example.com/rss": { body: fixture("sample-rss.xml") },
@@ -77,6 +77,6 @@ describe("discovery integration", () => {
     expect(summary.totalFound).toBeGreaterThan(1);
     expect(jobs.some((job) => job.title.includes("UI/UX"))).toBe(true);
     expect(jobs.some((job) => job.title.includes("Agent Engineer"))).toBe(true);
-    expect(contacts.some((contact) => contact.email === "hello@istanbulstudio.com")).toBe(true);
+    expect(contacts.some((contact) => contact.email === "hello@berlinstudio.com")).toBe(true);
   });
 });

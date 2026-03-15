@@ -9,8 +9,8 @@ const profile: ProfileSummary = {
   targetSeniority: "junior",
   allowStretchRoles: false,
   avoidTitleTerms: ["senior", "lead", "manager", "director", "head", "principal", "staff"],
-  preferredLocations: ["Istanbul", "Remote"],
-  languagePreference: ["tr", "en"],
+  preferredLocations: ["Berlin", "Germany", "Remote"],
+  languagePreference: ["en", "de"],
   toolSignals: ["figma", "design systems", "typescript", "python", "agent"],
   summary: "Product-focused design and AI tooling profile.",
 };
@@ -22,13 +22,13 @@ function listing(partial: Partial<ListingCandidate>): ListingCandidate {
     title: "Product Designer",
     titleFamily: "",
     company: "ModaAI",
-    location: "Istanbul",
-    country: "Turkey",
-    language: "tr",
+    location: "Berlin",
+    country: "Germany",
+    language: "en",
     workModel: "hybrid",
     employmentType: "full-time",
     salary: "",
-    description: "Figma, design systems, UX, and product design role in Istanbul.",
+    description: "Figma, design systems, UX, and product design role in Berlin.",
     url: "https://jobs.example.com/designer",
     applyUrl: "https://jobs.example.com/designer",
     source: "test",
@@ -59,7 +59,7 @@ function listing(partial: Partial<ListingCandidate>): ListingCandidate {
 }
 
 describe("scoring", () => {
-  it("prioritizes Turkish Istanbul design roles", () => {
+  it("prioritizes Berlin design roles", () => {
     const config = loadConfig(makeTempDir());
     const scored = scoreListing(config, profile, listing({}));
     expect(scored.score).toBeGreaterThan(55);
@@ -94,5 +94,21 @@ describe("scoring", () => {
       listing({ description: "Applications closed. This role is no longer hiring." }),
     );
     expect(scored.category).toBe("Excluded");
+  });
+
+  it("excludes non-remote roles outside Berlin and Germany", () => {
+    const config = loadConfig(makeTempDir());
+    const scored = scoreListing(
+      config,
+      profile,
+      listing({
+        location: "Istanbul",
+        country: "Turkey",
+        workModel: "hybrid",
+        description: "Hybrid Figma and product design role based in Istanbul.",
+      }),
+    );
+    expect(scored.category).toBe("Excluded");
+    expect(scored.breakdown.gatesFailed).toContain("location_outside_target");
   });
 });

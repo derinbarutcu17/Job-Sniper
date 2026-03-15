@@ -77,6 +77,9 @@ export function normalizeTitleFamily(text: string): string {
 function gateEligibility(config: SniperConfig, profile: ProfileSummary, listing: ListingCandidate): ScoreBreakdown {
   const title = normalizeText(listing.title);
   const description = normalizeText(listing.description);
+  const locationBlob = normalizeText(
+    `${listing.location} ${listing.country} ${listing.remoteScope} ${listing.applicantLocationRequirements.join(" ")}`,
+  );
   const breakdown: ScoreBreakdown = {
     titleFit: 0,
     skillFit: 0,
@@ -121,6 +124,21 @@ function gateEligibility(config: SniperConfig, profile: ProfileSummary, listing:
     breakdown.negatives.push(`Role family mismatch: ${findFirstMatch(`${title} ${description}`, HEAVY_MISMATCH_TERMS)}`);
   } else {
     breakdown.gatesPassed.push("role_family_fit");
+  }
+
+  const matchesTargetLocation =
+    includesAny(locationBlob, config.search.priorityCities) ||
+    includesAny(locationBlob, config.search.priorityCountries) ||
+    includesAny(locationBlob, profile.preferredLocations);
+  const isRemoteFriendly =
+    listing.workModel === "remote" ||
+    includesAny(locationBlob, ["remote"]) ||
+    includesAny(description, ["remote"]);
+  if (locationBlob && !matchesTargetLocation && !isRemoteFriendly) {
+    breakdown.gatesFailed.push("location_outside_target");
+    breakdown.negatives.push("Role is outside the Berlin/Germany target zone.");
+  } else {
+    breakdown.gatesPassed.push("location_fit");
   }
 
   return breakdown;

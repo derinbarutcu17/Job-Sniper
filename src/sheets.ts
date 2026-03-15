@@ -217,7 +217,7 @@ function bestContact(job: JobRecord): string {
 
 function jobRows(db: ReturnType<typeof openDatabase>["db"]): Row[] {
   const jobs = db
-    .prepare("SELECT * FROM jobs ORDER BY score DESC, updated_at DESC")
+    .prepare("SELECT * FROM jobs WHERE status != 'excluded' ORDER BY score DESC, updated_at DESC")
     .all() as JobRecord[];
   return jobs.map((job) => ({
     canonical_key: job.canonical_key,

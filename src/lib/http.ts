@@ -18,7 +18,17 @@ function challengeDetected(status: number, body: string, url: string): boolean {
   const lower = body.toLowerCase();
   return (
     status === 403 ||
-    (/wellfound\.com/i.test(url) && (lower.includes("please enable js") || lower.includes("disable any ad blocker") || lower.includes("cf-chl") || lower.includes("challenge-platform")))
+    (/wellfound\.com/i.test(url) &&
+      (lower.includes("please enable js") ||
+        lower.includes("disable any ad blocker") ||
+        lower.includes("cf-chl") ||
+        lower.includes("challenge-platform") ||
+        lower.includes("datadome") ||
+        lower.includes("captcha-delivery.com") ||
+        lower.includes("geo.captcha-delivery.com") ||
+        lower.includes("dd={'rt':'c'") ||
+        lower.includes('dd={"rt":"c"') ||
+        lower.includes("datadome captcha")))
   );
 }
 

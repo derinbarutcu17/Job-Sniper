@@ -48,7 +48,7 @@ export async function discoverFromRss(source: RssSource, deps: Dependencies): Pr
       title: jobTitle.trim(),
       titleFamily: "",
       company: company.trim(),
-      location: lane === "design_jobs" ? "Istanbul/Remote" : "Remote",
+      location: lane === "design_jobs" ? "Berlin/Remote" : "Remote",
       country: "",
       language: /[ığüşöçİĞÜŞÖÇ]/.test(description) ? "tr" : "en",
       workModel: inferWorkModel(description),

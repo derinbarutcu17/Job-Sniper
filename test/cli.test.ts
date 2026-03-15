@@ -8,7 +8,7 @@ describe("cli", () => {
   it("supports onboard and digest smoke flow", async () => {
     const baseDir = makeTempDir();
     const onboard = await runCli(
-      ["onboard", "I build AI tools and design systems in Istanbul using Figma, TypeScript, and Python."],
+      ["onboard", "I build AI tools and design systems in Berlin using Figma, TypeScript, and Python."],
       baseDir,
     );
     expect(onboard).toContain("Profile synced");

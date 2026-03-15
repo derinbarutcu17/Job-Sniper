@@ -4,12 +4,12 @@
 
 It runs locally, keeps a SQLite database as the source of truth, searches the public web plus common ATS platforms, ranks roles against your CV, extracts public company/contact signals, and syncs the results into an AI-editable Google Sheet.
 
-This repo is designed for an Istanbul-first workflow:
+This repo is now tuned for a Berlin/Germany-first workflow:
 
-- Turkish and Istanbul/Turkey opportunities are prioritized
-- global remote roles still stay in the pipeline
+- Berlin and Germany opportunities are prioritized
+- remote roles still stay in the pipeline
 - design and AI-coding roles are tracked together
-- companies and public hiring contacts are stored alongside listings
+- company/contact enrichment is optimized for public cold-outreach surfaces
 
 ## What it does
 
@@ -78,7 +78,7 @@ Runtime state lives in:
 Paste CV text directly:
 
 ```text
-/sniper onboard I am a product designer and AI builder based in Istanbul...
+/sniper onboard I am a product designer and AI builder based in Berlin...
 ```
 
 Or point it at a local file:
@@ -200,7 +200,7 @@ Examples:
 Example prompt to OpenClaw:
 
 ```text
-Open the Claw Job Sniper Google Sheet, find the high-priority Istanbul design roles, visit the job pages, and draft concise outreach emails for the top 3.
+Open the Claw Job Sniper Google Sheet, find the high-priority Berlin design and AI roles, visit the job pages, and draft concise outreach emails for the top 3.
 ```
 
 ### Workflow 4: ChatGPT or Gemini reading the outputs
@@ -215,7 +215,7 @@ There are a few practical ways to let ChatGPT or Gemini work with the results:
 Typical prompts:
 
 ```text
-Here is my Jobs sheet export. Rank the top 10 Istanbul roles by likely interview conversion.
+Here is my Jobs sheet export. Rank the top 10 Berlin roles by likely interview conversion.
 ```
 
 ```text
@@ -295,6 +295,56 @@ That gives you:
 - AI-readable structured outputs
 - human-editable workflow state
 - a clean handoff into outreach and application ops
+
+## Berlin startup workflow
+
+If you are using this as a Berlin startup cold-email machine, the tight loop is:
+
+1. `/sniper onboard ...`
+2. `/sniper run --company-watch`
+3. `/sniper companies 20`
+4. `/sniper contacts <company-id-or-key>`
+5. `/sniper sheet sync`
+
+Then work from the sheet:
+
+- `Companies` tab = startup/company shortlist
+- `Contacts` tab = public inboxes, LinkedIn company pages, and contact forms
+- `Jobs` tab = best Berlin role matches with `best_contact` where available
+
+For a stronger pass on a specific company:
+
+```text
+/sniper enrich company <company-id-or-key>
+```
+
+Useful prompts on top of that:
+
+```text
+Open the Companies tab, shortlist the Berlin startups with the strongest public contact surfaces, then draft 5 concise cold emails.
+```
+
+```text
+Open the Jobs tab, find Berlin startup roles with a populated best_contact, and draft outreach for the top 3.
+```
+
+## Privacy and secrets
+
+This project is designed to keep sensitive runtime data out of git:
+
+- `profile/` is ignored
+- local databases in `data/*.db` are ignored
+- temporary HTML artifacts in `data/*.html` are ignored
+- `.env` is ignored
+
+Expected secrets are environment variables, not committed files:
+
+- `SNIPER_GOOGLE_SERVICE_ACCOUNT_PATH`
+- `SNIPER_GOOGLE_SERVICE_ACCOUNT_JSON`
+- `SNIPER_GOOGLE_SHEET_ID`
+- `SNIPER_GOOGLE_FOLDER_ID`
+
+Recommended rule: treat this repo as code plus tests plus docs. Keep CVs, API credentials, generated databases, exports, and local operating data outside the tracked tree.
 
 ## Notes on scope
 

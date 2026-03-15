@@ -17,7 +17,7 @@ export function draftOutreach(baseDir: string, jobId: number): string {
   const draft = [
     `${intro} ${job.company_name} ekibi,`,
     "",
-    `Istanbul-first role scan'imde ${job.title} pozisyonunu gördüm ve profilimle güçlü bir eşleşme buldum.`,
+    `Current role scan'imde ${job.title} pozisyonunu gördüm ve profilimle güçlü bir eşleşme buldum.`,
     `Öne çıkan sinyaller: ${relevant.join(", ") || "product building, design, AI tooling"}.`,
     `Kısa özet: ${job.match_rationale || "This role matches my current focus across design and AI-enabled product work."}`,
     "",

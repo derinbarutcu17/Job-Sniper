@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "OpenClaw-native job intelligence skill for Istanbul-first design and AI coding roles.",
+  "description": "OpenClaw-native job intelligence skill for Berlin-first design, AI coding, and startup outreach workflows.",
   "scripts": {
     "sniper": "node ./scripts/run-sniper.mjs",
     "test": "vitest run",
@@ -15,6 +15,7 @@
     "fast-xml-parser": "^5.3.0",
     "googleapis": "^157.0.0",
     "pdf-parse": "^1.1.1",
+    "playwright-core": "^1.58.2",
     "tsx": "^4.20.6"
   },
   "devDependencies": {

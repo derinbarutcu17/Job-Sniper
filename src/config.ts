@@ -14,23 +14,19 @@ export const defaultConfig: SniperConfig = {
     maxPagesPerDomainPerRun: 10,
     retries: 2,
     timeoutMs: 10000,
-    priorityCities: ["Istanbul", "İstanbul"],
-    priorityCountries: ["Turkey", "Türkiye"],
+    priorityCities: ["Berlin"],
+    priorityCountries: ["Germany", "Deutschland"],
     remoteScopes: ["remote", "hybrid"],
   },
   lanes: {
     design_jobs: {
       enabled: true,
       queries: {
-        tr: [
-          "istanbul urun tasarimcisi kariyer",
-          "istanbul ui ux tasarim is ilani",
-          "turkiye figma design systems kariyer",
-        ],
+        tr: [],
         en: [
-          "Istanbul product designer jobs",
-          "Turkey UX UI designer careers",
-          "design engineer figma react jobs",
+          "Berlin product designer jobs",
+          "Germany UX UI designer careers",
+          "Berlin design engineer figma react jobs",
         ],
       },
       keywords: [
@@ -46,15 +42,11 @@ export const defaultConfig: SniperConfig = {
     ai_coding_jobs: {
       enabled: true,
       queries: {
-        tr: [
-          "istanbul yapay zeka muhendisi is ilani",
-          "turkiye agent engineer kariyer",
-          "turkiye typescript python ai kariyer",
-        ],
+        tr: [],
         en: [
-          "Istanbul AI engineer jobs",
-          "remote LLM engineer jobs",
-          "agent engineer TypeScript Python startup",
+          "Berlin AI engineer jobs",
+          "Germany LLM engineer jobs",
+          "Berlin agent engineer TypeScript Python startup",
         ],
       },
       keywords: [
@@ -72,15 +64,11 @@ export const defaultConfig: SniperConfig = {
     company_watch: {
       enabled: true,
       queries: {
-        tr: [
-          "istanbul ai startup careers",
-          "istanbul design studio team careers",
-          "turkiye genai startup hiring",
-        ],
+        tr: [],
         en: [
-          "Istanbul AI startup careers",
-          "Turkey product design startup team",
-          "creative AI startup remote careers",
+          "Berlin AI startup careers",
+          "Germany product design startup team",
+          "creative AI startup Berlin careers",
         ],
       },
       keywords: ["careers", "jobs", "hiring", "team", "startup", "founding", "series a", "seed"],
@@ -92,9 +80,9 @@ export const defaultConfig: SniperConfig = {
       { name: "Berlin Startup Jobs Engineering", url: "https://berlinstartupjobs.com/engineering/feed/" },
     ],
     atsBoards: [
-      { name: "Wellfound Istanbul Startups", provider: "wellfound", url: "https://wellfound.com/startups/location/istanbul-istanbul", lane: "company_watch" },
-      { name: "Wellfound Design Jobs", provider: "wellfound", url: "https://wellfound.com/location/istanbul-istanbul", lane: "design_jobs" },
-      { name: "Wellfound AI / Engineering Jobs", provider: "wellfound", url: "https://wellfound.com/location/istanbul-istanbul", lane: "ai_coding_jobs" }
+      { name: "Wellfound Berlin Startups", provider: "wellfound", url: "https://wellfound.com/startups/location/berlin-berlin", lane: "company_watch" },
+      { name: "Wellfound Berlin Design Jobs", provider: "wellfound", url: "https://wellfound.com/location/berlin-berlin", lane: "design_jobs" },
+      { name: "Wellfound Berlin AI / Engineering Jobs", provider: "wellfound", url: "https://wellfound.com/location/berlin-berlin", lane: "ai_coding_jobs" }
     ],
   },
   blacklist: {

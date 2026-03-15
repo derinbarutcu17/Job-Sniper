@@ -4,7 +4,7 @@ import { deriveProfileSummary } from "../src/profile.js";
 describe("profile seniority parsing", () => {
   it("treats explicit no-senior wording as junior target", () => {
     const profile = deriveProfileSummary(
-      "İstanbul based designer. No Senior/Lead roles. Looking for junior or associate product design opportunities.",
+      "Berlin based designer. No Senior/Lead roles. Looking for junior or associate product design opportunities.",
     );
     expect(profile.targetSeniority).toBe("junior");
     expect(profile.allowStretchRoles).toBe(false);
