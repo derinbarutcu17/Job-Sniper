@@ -1,6 +1,9 @@
+import fs from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { loadConfig } from "../src/config.js";
 import { scoreListing } from "../src/scoring.js";
+import { buildQueries } from "../src/search/queries.js";
 import type { ListingCandidate, ProfileSummary } from "../src/types.js";
 import { makeTempDir } from "./helpers.js";
 
@@ -110,5 +113,64 @@ describe("scoring", () => {
     );
     expect(scored.category).toBe("Excluded");
     expect(scored.breakdown.gatesFailed).toContain("location_outside_target");
+  });
+
+  it("supports custom role packs without code changes", () => {
+    const baseDir = makeTempDir();
+    fs.writeFileSync(
+      path.join(baseDir, "config.json"),
+      JSON.stringify(
+        {
+          lanes: {
+            policy_jobs: {
+              label: "Policy Jobs",
+              type: "job",
+              enabled: true,
+              queries: {
+                tr: [],
+                en: ["berlin climate policy jobs"],
+              },
+              keywords: ["policy analyst", "climate policy", "public affairs"],
+              queryTerms: ["policy analyst", "public policy associate"],
+              profileSignals: ["policy", "climate policy", "research", "public affairs"],
+              titleFamilies: [{ family: "Policy Analyst", terms: ["policy analyst", "public policy associate"] }],
+              mismatchTerms: ["sales", "account executive"],
+            },
+          },
+          blacklist: {
+            lanes: {
+              policy_jobs: [],
+            },
+          },
+        },
+        null,
+        2,
+      ),
+    );
+
+    const config = loadConfig(baseDir);
+    const customProfile: ProfileSummary = {
+      ...profile,
+      roleFamilies: ["policy_jobs"],
+      toolSignals: ["policy", "climate policy", "research", "public affairs"],
+      summary: "Climate policy and research profile.",
+    };
+
+    const queries = buildQueries(config, customProfile);
+    expect(queries.some((query) => query.lane === "policy_jobs")).toBe(true);
+    expect(queries.some((query) => query.lane === "policy_jobs" && /policy|public affairs/i.test(query.query))).toBe(true);
+
+    const scored = scoreListing(
+      config,
+      customProfile,
+      listing({
+        lane: "policy_jobs",
+        title: "Policy Analyst",
+        description: "Climate policy, research, and public affairs role in Berlin.",
+      }),
+    );
+    expect(scored.category).not.toBe("Excluded");
+    expect(scored.titleFamily).toBe("Policy Analyst");
+    expect(scored.score).toBeGreaterThan(45);
   });
 });

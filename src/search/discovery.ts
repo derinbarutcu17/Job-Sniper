@@ -14,6 +14,7 @@ import { mapLimit, withRetries, withTimeout } from "../lib/async.js";
 import { createDefaultDependencies } from "../lib/http.js";
 import { canonicalCompanyKey, canonicalContactKey, domainFromUrl, normalizeUrl } from "../lib/url.js";
 import { loadProfile } from "../profile.js";
+import { getDefaultCompanyWatchLane, isCompanyWatchLane } from "../role-packs.js";
 import { normalizeTitleFamily, scoreListing } from "../scoring.js";
 import type { CompanyRecordInput, ContactCandidate, Dependencies, DiscoveryCandidate, ListingCandidate, RunSummary, SearchLane } from "../types.js";
 import { crawlUrl, discoverFromAtsBoard, expandSearchResult } from "./ats.js";
@@ -36,13 +37,18 @@ function filterQueries(baseDir: string, lane?: SearchLane, companyWatchOnly = fa
   const config = loadConfig(baseDir);
   const { profile } = loadProfile(baseDir);
   return buildQueries(config, profile).filter((query) => {
-    if (companyWatchOnly) return query.lane === "company_watch";
+    if (companyWatchOnly) return isCompanyWatchLane(config, query.lane);
     if (lane) return query.lane === lane;
     return true;
   });
 }
 
-function buildCompanyInput(candidate: DiscoveryCandidate, pageText: string, contacts: ContactCandidate[]): CompanyRecordInput {
+function buildCompanyInput(
+  config: ReturnType<typeof loadConfig>,
+  candidate: DiscoveryCandidate,
+  pageText: string,
+  contacts: ContactCandidate[],
+): CompanyRecordInput {
   const domain = domainFromUrl(candidate.url);
   const location =
     /berlin/i.test(pageText) ? "Berlin" :
@@ -80,7 +86,7 @@ function buildCompanyInput(candidate: DiscoveryCandidate, pageText: string, cont
     remotePolicy: /remote|uzaktan|hybrid/i.test(pageText) ? "remote-friendly" : "",
     openRoleCount: /jobs|careers|open roles/i.test(pageText) ? 1 : 0,
     startupScore: startupSignals.length * 8,
-    companyFitScore: candidate.lane === "company_watch" ? 10 : 6,
+    companyFitScore: isCompanyWatchLane(config, candidate.lane) ? 10 : 6,
     hiringSignalScore: hiringSignals.length * 4,
     contactabilityScore: contacts.some((contact) => contact.confidence === "high") ? 12 : contacts.length ? 6 : 0,
     isStartupCandidate: startupSignals.length > 0,
@@ -100,8 +106,8 @@ async function collectConfiguredListings(
       // RSS feeds are still useful across job lanes, so keep them unless user requests company-only mode.
     }
     try {
-      const discovered = await withTimeout(discoverFromRss(source, deps), config.search.timeoutMs, `rss:${source.name}`);
-      listings.push(...discovered.filter((listing) => (options.companyWatchOnly ? listing.lane === "company_watch" : options.lane ? listing.lane === options.lane : true)));
+      const discovered = await withTimeout(discoverFromRss(source, deps, config), config.search.timeoutMs, `rss:${source.name}`);
+      listings.push(...discovered.filter((listing) => (options.companyWatchOnly ? isCompanyWatchLane(config, listing.lane) : options.lane ? listing.lane === options.lane : true)));
       sourceBreakdownAccumulator(sourceBreakdown, "rss", discovered.length);
     } catch {
       sourceBreakdownAccumulator(sourceBreakdown, "rss_failed", 1);
@@ -109,10 +115,11 @@ async function collectConfiguredListings(
   }
 
   for (const board of config.sources.atsBoards) {
-    if (options.companyWatchOnly && (board.lane ?? "company_watch") !== "company_watch") continue;
-    if (options.lane && (board.lane ?? "company_watch") !== options.lane) continue;
+    const boardLane = board.lane ?? getDefaultCompanyWatchLane(config);
+    if (options.companyWatchOnly && !isCompanyWatchLane(config, boardLane)) continue;
+    if (options.lane && boardLane !== options.lane) continue;
     try {
-      const discovered = await withTimeout(discoverFromAtsBoard(board, deps), config.search.timeoutMs, `ats:${board.name}`);
+      const discovered = await withTimeout(discoverFromAtsBoard(board, deps, config), config.search.timeoutMs, `ats:${board.name}`);
       listings.push(...discovered);
       sourceBreakdownAccumulator(sourceBreakdown, "ats", discovered.length);
     } catch {
@@ -160,7 +167,7 @@ export async function runDiscovery(
   let jsFallbacks = 0;
 
   const processListing = (listing: (typeof directListings)[number]) => {
-    if (listing.lane === "company_watch" && !listing.isRealJobPage) {
+    if (isCompanyWatchLane(config, listing.lane) && !listing.isRealJobPage) {
       const companyUrl = listing.companyUrl || listing.url;
       const companyInput: CompanyRecordInput = {
         canonicalKey: canonicalCompanyKey(listing.company || listing.title || domainFromUrl(companyUrl), domainFromUrl(companyUrl)),
@@ -197,7 +204,7 @@ export async function runDiscovery(
       return;
     }
 
-    const scored = scoreListing(config, profile, { ...listing, titleFamily: normalizeTitleFamily(listing.title) });
+    const scored = scoreListing(config, profile, { ...listing, titleFamily: normalizeTitleFamily(config, listing.lane, listing.title) });
     const result = upsertJob(
       db,
       config,
@@ -221,7 +228,7 @@ export async function runDiscovery(
     processListing(listing);
   }
 
-  const jobCandidates = initialCandidates.filter((candidate) => candidate.lane !== "company_watch");
+  const jobCandidates = initialCandidates.filter((candidate) => !isCompanyWatchLane(config, candidate.lane));
   const expandedSearchListings = await mapLimit(jobCandidates, config.search.pageFetchConcurrency, async (candidate) => {
     fetchAttempts += 1;
     try {
@@ -238,6 +245,7 @@ export async function runDiscovery(
               provider: candidate.source,
             },
             deps,
+            config,
           ),
         config.search.retries,
       );
@@ -252,7 +260,7 @@ export async function runDiscovery(
     processListing(listing);
   }
 
-  let currentBatch = initialCandidates.filter((candidate) => candidate.lane === "company_watch");
+  let currentBatch = initialCandidates.filter((candidate) => isCompanyWatchLane(config, candidate.lane));
   while (currentBatch.length) {
     const results = await mapLimit(currentBatch, config.search.pageFetchConcurrency, async (candidate) => {
       const domain = candidate.domain || domainFromUrl(candidate.url);
@@ -265,7 +273,7 @@ export async function runDiscovery(
 
       try {
         const outcome = await withRetries(
-          () => crawlUrl(candidate.url, candidate.lane, candidate.sourceType, candidate.source, deps),
+          () => crawlUrl(candidate.url, candidate.lane, candidate.sourceType, candidate.source, deps, config),
           config.search.retries,
         );
         fetchSuccesses += 1;
@@ -308,8 +316,8 @@ export async function runDiscovery(
       }
 
       const { candidate, outcome } = result;
-      if (!outcome.listings.length && candidate.lane === "company_watch") {
-        const company = buildCompanyInput(candidate, outcome.page.text, outcome.contacts);
+      if (!outcome.listings.length && isCompanyWatchLane(config, candidate.lane)) {
+        const company = buildCompanyInput(config, candidate, outcome.page.text, outcome.contacts);
         const companyId = upsertCompany(db, company);
         companiesTouched += 1;
         for (const contact of outcome.contacts) {

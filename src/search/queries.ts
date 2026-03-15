@@ -1,30 +1,20 @@
-import type { ProfileSummary, SearchLane, SearchQuery, SniperConfig } from "../types.js";
+import { collectQueryTerms, getEnabledRolePackIds, isCompanyWatchLane } from "../role-packs.js";
+import type { LaneId, ProfileSummary, SearchQuery, SniperConfig } from "../types.js";
 
 const ATS_SITES = ["greenhouse.io", "jobs.lever.co", "ashbyhq.com", "workable.com", "teamtailor.com", "smartrecruiters.com", "recruitee.com", "personio.de", "wellfound.com"];
-
-function laneRoleTokens(lane: SearchLane): string[] {
-  switch (lane) {
-    case "design_jobs":
-      return ["product designer", "ux designer", "ui designer", "design engineer", "creative technologist"];
-    case "ai_coding_jobs":
-      return ["ai engineer", "llm engineer", "agent engineer", "automation engineer", "genai product builder"];
-    case "company_watch":
-      return ["AI startup", "product design startup", "creative AI company"];
-  }
-}
 
 export function buildQueries(config: SniperConfig, profile: ProfileSummary): SearchQuery[] {
   if (config.search.maxQueriesPerLane <= 0) {
     return [];
   }
   const queries: SearchQuery[] = [];
-  (Object.keys(config.lanes) as SearchLane[]).forEach((lane) => {
-    if (!config.lanes[lane].enabled) return;
-    const laneTerms = laneRoleTokens(lane);
+  getEnabledRolePackIds(config).forEach((lane: LaneId) => {
+    const laneTerms = collectQueryTerms(config, lane);
     const profileTerms = profile.toolSignals.slice(0, 4);
     const locationTerms = [...config.search.priorityCities.slice(0, 1), ...config.search.priorityCountries.slice(0, 1)];
+    const companyWatch = isCompanyWatchLane(config, lane);
 
-    const baseFamilies: Array<SearchQuery["family"]> = lane === "company_watch" ? ["company", "contact"] : ["job", "company", "contact"];
+    const baseFamilies: Array<SearchQuery["family"]> = companyWatch ? ["company", "contact"] : ["job", "company", "contact"];
     for (const family of baseFamilies) {
       for (const locale of ["tr", "en"] as const) {
         const configured = config.lanes[lane].queries[locale];
@@ -40,14 +30,14 @@ export function buildQueries(config: SniperConfig, profile: ProfileSummary): Sea
           lane,
           locale: "en",
           query: `${role} ${location}`,
-          family: lane === "company_watch" ? "company" : "job",
+          family: companyWatch ? "company" : "job",
           providerHints: [],
         });
         queries.push({
           lane,
           locale: "en",
           query: `${role} remote ${profileTerms.join(" ")}`.trim(),
-          family: lane === "company_watch" ? "company" : "job",
+          family: companyWatch ? "company" : "job",
           providerHints: ["remote"],
         });
       }
@@ -67,7 +57,7 @@ export function buildQueries(config: SniperConfig, profile: ProfileSummary): Sea
         lane,
         locale: "en",
         query: `${term} careers startup`,
-        family: lane === "company_watch" ? "company" : "contact",
+        family: companyWatch ? "company" : "contact",
         providerHints: ["startup"],
       });
     }

@@ -15,6 +15,7 @@ import { draftOutreach } from "./draft.js";
 import { createDefaultDependencies } from "./lib/http.js";
 import { canonicalCompanyKey, canonicalContactKey, domainFromUrl, normalizeUrl } from "./lib/url.js";
 import { onboardProfile } from "./profile.js";
+import { getDefaultCompanyWatchLane } from "./role-packs.js";
 import { runDiscovery } from "./search/discovery.js";
 import { buildPageRecord, extractContacts } from "./search/extract.js";
 import { getSearchProviders } from "./search/web.js";
@@ -228,6 +229,7 @@ export function createApp(baseDir: string, dependencies: AppDependencies = {}) {
           config.blacklist.companies.push(term);
         }
       } else if (input.lane) {
+        config.blacklist.lanes[input.lane] ??= [];
         if (!config.blacklist.lanes[input.lane].includes(term)) {
           config.blacklist.lanes[input.lane].push(term);
         }
@@ -284,15 +286,17 @@ export function createApp(baseDir: string, dependencies: AppDependencies = {}) {
       return enrichCompanyRecord(baseDir, deps, companyRef);
     },
 
-    requeue(url: string, lane: SearchLane = "company_watch") {
+    requeue(url: string, lane?: SearchLane) {
+      const config = loadConfig(baseDir);
       const { db } = openDatabase(baseDir);
       const normalizedUrl = normalizeUrl(url);
+      const targetLane = lane ?? getDefaultCompanyWatchLane(config);
       enqueueDiscoveryCandidates(db, [
         {
           url,
           normalizedUrl,
           sourceType: "page",
-          lane,
+          lane: targetLane,
           intent: "unknown",
           query: "",
           confidence: 0.5,
@@ -303,7 +307,7 @@ export function createApp(baseDir: string, dependencies: AppDependencies = {}) {
           snippet: "",
         },
       ]);
-      return `Queued ${url} for ${lane}.`;
+      return `Queued ${url} for ${targetLane}.`;
     },
 
     sourcesTest() {

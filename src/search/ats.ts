@@ -1,7 +1,9 @@
 import { mapLimit } from "../lib/async.js";
+import { defaultConfig } from "../config.js";
 import { summarizeToLine, uniqueNonEmpty } from "../lib/text.js";
 import { domainFromUrl, normalizeUrl } from "../lib/url.js";
 import * as cheerio from "cheerio";
+import { collectQueryTerms, getDefaultCompanyWatchLane, getDefaultJobLane, inferRolePackLane, isCompanyWatchLane } from "../role-packs.js";
 import type {
   AtsBoardSource,
   ContactCandidate,
@@ -11,6 +13,7 @@ import type {
   SearchLane,
   SearchQuery,
   SearchResult,
+  SniperConfig,
   SourceType,
 } from "../types.js";
 import { buildPageRecord, extractContacts, parseCareerHub, parseGenericListing, parseJsonLdListings } from "./extract.js";
@@ -127,8 +130,9 @@ async function fetchGreenhouseBoard(source: AtsBoardSource, deps: Dependencies):
     throw new Error(`Greenhouse board fetch failed for ${source.url}`);
   }
   const payload = (await response.json()) as { jobs?: Array<Record<string, unknown>> };
+  const lane = source.lane ?? "general_jobs";
   return (payload.jobs ?? []).map((job) =>
-    buildAtsListing(source, source.lane ?? "ai_coding_jobs", job, {
+    buildAtsListing(source, lane, job, {
       title: String(job.title ?? "Untitled role"),
       company: source.name,
       location: String((job.location as Record<string, unknown> | undefined)?.name ?? ""),
@@ -150,8 +154,9 @@ async function fetchLeverBoard(source: AtsBoardSource, deps: Dependencies): Prom
     throw new Error(`Lever board fetch failed for ${source.url}`);
   }
   const payload = (await response.json()) as Array<Record<string, unknown>>;
+  const lane = source.lane ?? "general_jobs";
   return payload.map((job) =>
-    buildAtsListing(source, source.lane ?? "ai_coding_jobs", job, {
+    buildAtsListing(source, lane, job, {
       title: String(job.text ?? "Untitled role"),
       company: source.name,
       location: String((job.categories as Record<string, unknown> | undefined)?.location ?? ""),
@@ -217,7 +222,7 @@ function deriveTitleAndCompany(title: string): { title: string; company: string 
   return { title: cleaned, company: "" };
 }
 
-function buildWellfoundListingFromSearchResult(source: AtsBoardSource, result: SearchResult): ListingCandidate {
+function buildWellfoundListingFromSearchResult(source: AtsBoardSource, result: SearchResult, config: SniperConfig): ListingCandidate {
   const parsed = deriveTitleAndCompany(result.title);
   const description = summarizeToLine(result.snippet, 1000);
   const location =
@@ -226,7 +231,7 @@ function buildWellfoundListingFromSearchResult(source: AtsBoardSource, result: S
     /remote/i.test(result.snippet) ? "Remote" :
     "";
   return {
-    lane: source.lane ?? "design_jobs",
+    lane: source.lane ?? inferRolePackLane(config, `${result.title} ${result.snippet}`, "job"),
     externalId: result.url,
     title: parsed.title || result.title,
     titleFamily: "",
@@ -266,7 +271,7 @@ function buildWellfoundListingFromSearchResult(source: AtsBoardSource, result: S
   };
 }
 
-function buildWellfoundCompanyFromSearchResult(source: AtsBoardSource, result: SearchResult): ListingCandidate {
+function buildWellfoundCompanyFromSearchResult(source: AtsBoardSource, result: SearchResult, config: SniperConfig): ListingCandidate {
   const cleaned = result.title
     .replace(/\s*\|\s*wellfound.*$/i, "")
     .replace(/\s*-\s*wellfound.*$/i, "")
@@ -276,7 +281,7 @@ function buildWellfoundCompanyFromSearchResult(source: AtsBoardSource, result: S
     /germany|deutschland/i.test(result.snippet) ? "Germany" :
     "";
   return {
-    lane: "company_watch",
+    lane: source.lane ?? getDefaultCompanyWatchLane(config),
     externalId: result.url,
     title: cleaned,
     titleFamily: "",
@@ -316,29 +321,30 @@ function buildWellfoundCompanyFromSearchResult(source: AtsBoardSource, result: S
   };
 }
 
-function buildWellfoundFallbackQueries(source: AtsBoardSource): SearchQuery[] {
-  const lane = source.lane ?? "company_watch";
-  if (lane === "company_watch") {
+function buildWellfoundFallbackQueries(source: AtsBoardSource, config: SniperConfig): SearchQuery[] {
+  const lane = source.lane ?? getDefaultCompanyWatchLane(config);
+  if (isCompanyWatchLane(config, lane)) {
     return [
       { lane, locale: "en", family: "company", query: 'site:wellfound.com/company Berlin startup', providerHints: ["wellfound"] },
       { lane, locale: "en", family: "company", query: 'site:wellfound.com/company "Berlin" AI startup', providerHints: ["wellfound"] },
     ];
   }
-  if (lane === "design_jobs") {
-    return [
-      { lane, locale: "en", family: "job", query: 'site:wellfound.com/jobs "product designer" "Berlin"', providerHints: ["wellfound"] },
-      { lane, locale: "en", family: "job", query: 'site:wellfound.com/jobs "design engineer" Germany', providerHints: ["wellfound"] },
-    ];
+  const packQueries = collectQueryTerms(config, lane).slice(0, 2);
+  if (packQueries.length) {
+    return packQueries.flatMap((term) => ([
+      { lane, locale: "en", family: "job", query: `site:wellfound.com/jobs "${term}" "Berlin"`, providerHints: ["wellfound"] },
+      { lane, locale: "en", family: "job", query: `site:wellfound.com/jobs "${term}" Germany`, providerHints: ["wellfound"] },
+    ]));
   }
   return [
-    { lane, locale: "en", family: "job", query: 'site:wellfound.com/jobs "AI engineer" "Berlin"', providerHints: ["wellfound"] },
-    { lane, locale: "en", family: "job", query: 'site:wellfound.com/jobs "agent engineer" Germany', providerHints: ["wellfound"] },
+    { lane, locale: "en", family: "job", query: 'site:wellfound.com/jobs startup Berlin', providerHints: ["wellfound"] },
+    { lane, locale: "en", family: "job", query: 'site:wellfound.com/jobs startup Germany', providerHints: ["wellfound"] },
   ];
 }
 
-async function fetchWellfoundFromSearchFallback(source: AtsBoardSource, deps: Dependencies): Promise<ListingCandidate[]> {
+async function fetchWellfoundFromSearchFallback(source: AtsBoardSource, deps: Dependencies, config: SniperConfig): Promise<ListingCandidate[]> {
   const providers = getSearchProviders();
-  const queries = buildWellfoundFallbackQueries(source);
+  const queries = buildWellfoundFallbackQueries(source, config);
   const results: SearchResult[] = [];
   const providerQueries = queries.flatMap((query) => providers.map((provider) => ({ query, provider })));
   const batches = await mapLimit(providerQueries, 3, async ({ query, provider }) => {
@@ -355,10 +361,10 @@ async function fetchWellfoundFromSearchFallback(source: AtsBoardSource, deps: De
     deduped.set(normalizeUrl(result.url), result);
   }
   const uniqueResults = [...deduped.values()].slice(0, 25);
-  if ((source.lane ?? "company_watch") === "company_watch") {
-    return uniqueResults.map((result) => buildWellfoundCompanyFromSearchResult(source, result));
+  if (isCompanyWatchLane(config, source.lane ?? getDefaultCompanyWatchLane(config))) {
+    return uniqueResults.map((result) => buildWellfoundCompanyFromSearchResult(source, result, config));
   }
-  return uniqueResults.map((result) => buildWellfoundListingFromSearchResult(source, result));
+  return uniqueResults.map((result) => buildWellfoundListingFromSearchResult(source, result, config));
 }
 
 export async function crawlUrl(
@@ -367,6 +373,7 @@ export async function crawlUrl(
   sourceType: SourceType,
   provider: string,
   deps: Dependencies,
+  config: SniperConfig = defaultConfig,
 ): Promise<CrawlOutcome> {
   const response = await deps.fetch(url);
   if (!response.ok) {
@@ -401,19 +408,19 @@ function absoluteWellfoundUrl(href: string): string {
   return `https://wellfound.com${href.startsWith("/") ? href : `/${href}`}`;
 }
 
-async function fetchWellfoundBoard(source: AtsBoardSource, deps: Dependencies): Promise<ListingCandidate[]> {
+async function fetchWellfoundBoard(source: AtsBoardSource, deps: Dependencies, config: SniperConfig = defaultConfig): Promise<ListingCandidate[]> {
   const response = await deps.fetch(source.url);
   if (!response.ok) {
-    return fetchWellfoundFromSearchFallback(source, deps);
+    return fetchWellfoundFromSearchFallback(source, deps, config);
   }
   const html = await response.text();
   if (wellfoundChallengeDetected(html)) {
-    return fetchWellfoundFromSearchFallback(source, deps);
+    return fetchWellfoundFromSearchFallback(source, deps, config);
   }
   const $ = cheerio.load(html);
   const listings: ListingCandidate[] = [];
 
-  if ((source.lane ?? "company_watch") === "company_watch") {
+  if (isCompanyWatchLane(config, source.lane ?? getDefaultCompanyWatchLane(config))) {
     const seen = new Set<string>();
     $("a[href*='/company/']").each((_, element) => {
       const anchor = $(element);
@@ -423,7 +430,7 @@ async function fetchWellfoundBoard(source: AtsBoardSource, deps: Dependencies): 
       seen.add(href);
       const cardText = anchor.closest("div").parent().text().replace(/\s+/g, " ").trim();
       listings.push({
-        lane: "company_watch",
+        lane: source.lane ?? getDefaultCompanyWatchLane(config),
         externalId: href,
         title,
         titleFamily: "",
@@ -474,7 +481,7 @@ async function fetchWellfoundBoard(source: AtsBoardSource, deps: Dependencies): 
     seen.add(href);
     const cardText = anchor.closest("div").parent().text().replace(/\s+/g, " ").trim();
     listings.push({
-      lane: source.lane ?? "design_jobs",
+      lane: source.lane ?? getDefaultJobLane(config),
       externalId: href,
       title,
       titleFamily: "",
@@ -516,11 +523,12 @@ async function fetchWellfoundBoard(source: AtsBoardSource, deps: Dependencies): 
   if (listings.length) {
     return listings;
   }
-  return fetchWellfoundFromSearchFallback(source, deps);
+  return fetchWellfoundFromSearchFallback(source, deps, config);
 }
 
-async function discoverGenericBoard(source: AtsBoardSource, deps: Dependencies): Promise<ListingCandidate[]> {
-  const outcome = await crawlUrl(source.url, source.lane ?? "company_watch", "ats", source.provider || inferProvider(source.url), deps);
+async function discoverGenericBoard(source: AtsBoardSource, deps: Dependencies, config: SniperConfig = defaultConfig): Promise<ListingCandidate[]> {
+  const lane = source.lane ?? getDefaultCompanyWatchLane(config);
+  const outcome = await crawlUrl(source.url, lane, "ats", source.provider || inferProvider(source.url), deps, config);
   const direct = [...outcome.listings];
   if (!outcome.childUrls.length) {
     return direct;
@@ -528,7 +536,7 @@ async function discoverGenericBoard(source: AtsBoardSource, deps: Dependencies):
 
   const expanded = await mapLimit(outcome.childUrls.slice(0, 20), 4, async (childUrl) => {
     try {
-      return (await crawlUrl(childUrl, source.lane ?? "ai_coding_jobs", "ats", source.provider || inferProvider(childUrl), deps)).listings;
+      return (await crawlUrl(childUrl, source.lane ?? getDefaultJobLane(config), "ats", source.provider || inferProvider(childUrl), deps, config)).listings;
     } catch {
       return [];
     }
@@ -537,21 +545,21 @@ async function discoverGenericBoard(source: AtsBoardSource, deps: Dependencies):
   return [...direct, ...expanded.flat()];
 }
 
-export async function discoverFromAtsBoard(source: AtsBoardSource, deps: Dependencies): Promise<ListingCandidate[]> {
+export async function discoverFromAtsBoard(source: AtsBoardSource, deps: Dependencies, config: SniperConfig = defaultConfig): Promise<ListingCandidate[]> {
   switch (source.provider || inferProvider(source.url)) {
     case "greenhouse":
       return fetchGreenhouseBoard(source, deps);
     case "lever":
       return fetchLeverBoard(source, deps);
     case "wellfound":
-      return fetchWellfoundBoard(source, deps);
+      return fetchWellfoundBoard(source, deps, config);
     default:
-      return discoverGenericBoard(source, deps);
+      return discoverGenericBoard(source, deps, config);
   }
 }
 
-export async function expandSearchResult(result: SearchResult, deps: Dependencies): Promise<ListingCandidate[]> {
-  const outcome = await crawlUrl(result.url, result.lane, "search", result.provider, deps);
+export async function expandSearchResult(result: SearchResult, deps: Dependencies, config: SniperConfig = defaultConfig): Promise<ListingCandidate[]> {
+  const outcome = await crawlUrl(result.url, result.lane, "search", result.provider, deps, config);
   if (outcome.listings.length) {
     return outcome.listings;
   }
@@ -560,7 +568,7 @@ export async function expandSearchResult(result: SearchResult, deps: Dependencie
   }
   const nested = await mapLimit(outcome.childUrls.slice(0, 12), 4, async (childUrl) => {
     try {
-      return (await crawlUrl(childUrl, result.lane, "career_page", result.provider, deps)).listings;
+      return (await crawlUrl(childUrl, result.lane, "career_page", result.provider, deps, config)).listings;
     } catch {
       return [];
     }

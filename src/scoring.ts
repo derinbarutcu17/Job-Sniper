@@ -1,22 +1,13 @@
 import { extractYearRequirement, findFirstMatch, includesAny, normalizeText, pickTopSignals } from "./lib/text.js";
+import { collectMismatchTerms, collectQueryTerms, collectStartupTerms, normalizeTitleFamilyWithConfig } from "./role-packs.js";
 import type {
   Category,
+  LaneId,
   ListingCandidate,
   ProfileSummary,
   ScoreBreakdown,
-  SearchLane,
   SniperConfig,
 } from "./types.js";
-
-const TITLE_FAMILY_MAP: Array<{ family: string; terms: string[] }> = [
-  { family: "Product Designer", terms: ["product designer", "ürün tasarımcısı", "product design"] },
-  { family: "UI/UX Designer", terms: ["ui/ux designer", "ux designer", "ui designer", "ux", "ui"] },
-  { family: "Design Engineer", terms: ["design engineer", "creative technologist"] },
-  { family: "Frontend Engineer", terms: ["frontend engineer", "front-end engineer", "react developer"] },
-  { family: "AI Engineer", terms: ["ai engineer", "ml engineer", "llm engineer"] },
-  { family: "Automation Engineer", terms: ["automation engineer", "agent engineer"] },
-  { family: "GenAI Product Builder", terms: ["genai", "agent workflows", "ai product"] },
-];
 
 const ALWAYS_EXCLUDE_TITLE_TERMS = [
   "senior",
@@ -36,7 +27,8 @@ const ALWAYS_EXCLUDE_TITLE_TERMS = [
   "chief ",
   "architect",
 ];
-const HEAVY_MISMATCH_TERMS = [
+
+const GLOBAL_MISMATCH_TERMS = [
   "customer success",
   "sales manager",
   "growth partner",
@@ -50,6 +42,7 @@ const HEAVY_MISMATCH_TERMS = [
   "backend",
   "machine learning intern",
 ];
+
 const CLOSED_ROLE_TERMS = [
   "applications closed",
   "application closed",
@@ -66,12 +59,8 @@ function categoryFromScore(score: number): Category {
   return "Low Match";
 }
 
-export function normalizeTitleFamily(text: string): string {
-  const normalized = normalizeText(text);
-  return (
-    TITLE_FAMILY_MAP.find((entry) => entry.terms.some((term) => normalized.includes(normalizeText(term))))?.family ??
-    "Other"
-  );
+export function normalizeTitleFamily(config: SniperConfig, lane: LaneId, text: string): string {
+  return normalizeTitleFamilyWithConfig(config, lane, text);
 }
 
 function gateEligibility(config: SniperConfig, profile: ProfileSummary, listing: ListingCandidate): ScoreBreakdown {
@@ -80,6 +69,7 @@ function gateEligibility(config: SniperConfig, profile: ProfileSummary, listing:
   const locationBlob = normalizeText(
     `${listing.location} ${listing.country} ${listing.remoteScope} ${listing.applicantLocationRequirements.join(" ")}`,
   );
+  const laneMismatchTerms = [...GLOBAL_MISMATCH_TERMS, ...collectMismatchTerms(config, listing.lane)];
   const breakdown: ScoreBreakdown = {
     titleFit: 0,
     skillFit: 0,
@@ -119,9 +109,9 @@ function gateEligibility(config: SniperConfig, profile: ProfileSummary, listing:
     breakdown.gatesPassed.push("job_open");
   }
 
-  if (HEAVY_MISMATCH_TERMS.some((term) => title.includes(normalizeText(term)) || description.includes(normalizeText(term)))) {
+  if (laneMismatchTerms.some((term) => title.includes(normalizeText(term)) || description.includes(normalizeText(term)))) {
     breakdown.gatesFailed.push("role_family_mismatch");
-    breakdown.negatives.push(`Role family mismatch: ${findFirstMatch(`${title} ${description}`, HEAVY_MISMATCH_TERMS)}`);
+    breakdown.negatives.push(`Role family mismatch: ${findFirstMatch(`${title} ${description}`, laneMismatchTerms)}`);
   } else {
     breakdown.gatesPassed.push("role_family_fit");
   }
@@ -136,23 +126,12 @@ function gateEligibility(config: SniperConfig, profile: ProfileSummary, listing:
     includesAny(description, ["remote"]);
   if (locationBlob && !matchesTargetLocation && !isRemoteFriendly) {
     breakdown.gatesFailed.push("location_outside_target");
-    breakdown.negatives.push("Role is outside the Berlin/Germany target zone.");
+    breakdown.negatives.push("Role is outside the configured target zone.");
   } else {
     breakdown.gatesPassed.push("location_fit");
   }
 
   return breakdown;
-}
-
-function laneSignals(lane: SearchLane): string[] {
-  switch (lane) {
-    case "design_jobs":
-      return ["product designer", "ux", "ui", "figma", "design systems", "creative technologist", "design engineer"];
-    case "ai_coding_jobs":
-      return ["ai engineer", "llm", "agent", "automation", "typescript", "node", "python", "developer tools"];
-    case "company_watch":
-      return ["careers", "hiring", "team", "startup", "founding"];
-  }
 }
 
 export function scoreListing(
@@ -169,19 +148,19 @@ export function scoreListing(
       relevantProjects: [],
       breakdown,
       eligibility: "excluded",
-      titleFamily: normalizeTitleFamily(listing.title),
+      titleFamily: normalizeTitleFamily(config, listing.lane, listing.title),
     };
   }
 
-  const titleFamily = normalizeTitleFamily(`${listing.title} ${listing.description}`);
+  const titleFamily = normalizeTitleFamily(config, listing.lane, `${listing.title} ${listing.description}`);
   const titleBlob = normalizeText(`${listing.title} ${titleFamily}`);
   const descriptionBlob = normalizeText(`${listing.description} ${listing.location} ${listing.language}`);
   const allBlob = `${titleBlob} ${descriptionBlob}`;
 
-  const titleMatches = pickTopSignals(titleBlob, laneSignals(listing.lane), 5);
+  const titleMatches = pickTopSignals(titleBlob, collectQueryTerms(config, listing.lane), 5);
   breakdown.titleFit = Math.min(18, titleMatches.length * 6);
   if (titleMatches.length) {
-    breakdown.positives.push(`Title family fit: ${titleMatches.join(", ")}`);
+    breakdown.positives.push(`Title family fit (${listing.lane}): ${titleMatches.join(", ")}`);
     breakdown.gatesPassed.push("title_family");
   }
 
@@ -206,7 +185,7 @@ export function scoreListing(
 
   if (includesAny(allBlob, config.search.priorityCities) || includesAny(allBlob, profile.preferredLocations)) {
     breakdown.locationFit += 16;
-    breakdown.positives.push("Matches target city.");
+    breakdown.positives.push("Matches target location.");
   } else if (listing.workModel === "remote") {
     breakdown.locationFit += 8;
     breakdown.positives.push("Remote role kept in target funnel.");
@@ -226,9 +205,10 @@ export function scoreListing(
     breakdown.negatives.push(`Language mismatch: ${listing.language}`);
   }
 
-  if (includesAny(allBlob, ["seed", "series a", "founding", "small team", "0-1"])) {
+  const startupTerms = collectStartupTerms(config, listing.lane);
+  if (includesAny(allBlob, startupTerms)) {
     breakdown.startupFit += 10;
-    breakdown.positives.push("Startup/early-team signal.");
+    breakdown.positives.push(`Pack startup/company signal (${listing.lane}).`);
   }
 
   if (listing.publicContacts.some((contact) => contact.confidence === "high")) {
@@ -248,9 +228,10 @@ export function scoreListing(
     breakdown.negatives.push("Description contains management-heavy language.");
     breakdown.companyFit -= 8;
   }
-  if (includesAny(descriptionBlob, config.blacklist.keywords)) {
+  const laneBlacklist = config.blacklist.lanes[listing.lane] ?? [];
+  if (includesAny(descriptionBlob, [...config.blacklist.keywords, ...laneBlacklist])) {
     breakdown.companyFit -= 15;
-    breakdown.negatives.push("Out-of-scope role family detected.");
+    breakdown.negatives.push(`Out-of-scope role family detected for ${listing.lane}.`);
   }
 
   const score =
@@ -265,16 +246,16 @@ export function scoreListing(
     breakdown.freshnessFit +
     breakdown.contactabilityFit +
     breakdown.sourceQualityFit;
-
+  const category = categoryFromScore(score);
   const relevantProjects = [...new Set([...titleMatches, ...profileMatches])].slice(0, 5);
-  const boundedScore = Math.max(0, Math.min(100, score));
+
   return {
-    score: boundedScore,
-    category: categoryFromScore(boundedScore),
-    rationale: [...breakdown.positives, ...breakdown.negatives].join(" "),
+    score,
+    category,
+    rationale: [...breakdown.positives, ...breakdown.negatives].join(" ").trim(),
     relevantProjects,
     breakdown,
-    eligibility: boundedScore >= config.search.minScoreThreshold ? "eligible" : "soft_filtered",
+    eligibility: category === "Low Match" ? "soft_filtered" : "eligible",
     titleFamily,
   };
 }

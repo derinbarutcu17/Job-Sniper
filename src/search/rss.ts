@@ -1,17 +1,18 @@
 import { XMLParser } from "fast-xml-parser";
+import { defaultConfig } from "../config.js";
 import { decodeEntities, summarizeToLine, uniqueNonEmpty } from "../lib/text.js";
-import type { Dependencies, ListingCandidate, RssSource, SearchLane } from "../types.js";
+import { inferRolePackLane, isCompanyWatchLane } from "../role-packs.js";
+import type { Dependencies, ListingCandidate, RssSource, SearchLane, SniperConfig } from "../types.js";
 
 const parser = new XMLParser({
   ignoreAttributes: false,
   trimValues: true,
 });
 
-function inferLane(title: string, sourceName: string): SearchLane {
-  const haystack = `${title} ${sourceName}`.toLowerCase();
-  if (haystack.includes("design") || haystack.includes("tasarım")) return "design_jobs";
-  if (haystack.includes("career") || haystack.includes("company") || haystack.includes("startup")) return "company_watch";
-  return "ai_coding_jobs";
+function inferLane(config: SniperConfig, title: string, sourceName: string): SearchLane {
+  const haystack = `${title} ${sourceName}`;
+  const preferredType = /career|company|startup|team|hiring/i.test(haystack) ? "company_watch" : "job";
+  return inferRolePackLane(config, haystack, preferredType);
 }
 
 function inferWorkModel(text: string): ListingCandidate["workModel"] {
@@ -22,7 +23,7 @@ function inferWorkModel(text: string): ListingCandidate["workModel"] {
   return "unknown";
 }
 
-export async function discoverFromRss(source: RssSource, deps: Dependencies): Promise<ListingCandidate[]> {
+export async function discoverFromRss(source: RssSource, deps: Dependencies, config: SniperConfig = defaultConfig): Promise<ListingCandidate[]> {
   const response = await deps.fetch(source.url);
   if (!response.ok) {
     throw new Error(`RSS fetch failed with ${response.status} for ${source.url}`);
@@ -38,7 +39,7 @@ export async function discoverFromRss(source: RssSource, deps: Dependencies): Pr
     const title = decodeEntities(String(record.title ?? "Untitled role"));
     const url = String(record.link ?? "");
     const description = summarizeToLine(String(record.description ?? ""), 1200);
-    const lane = inferLane(title, source.name);
+    const lane = inferLane(config, title, source.name);
     const [jobTitle, company = "Unknown"] =
       title.includes(" // ") ? title.split(" // ", 2) : title.includes(" at ") ? title.split(" at ", 2) : [title];
 
@@ -48,7 +49,7 @@ export async function discoverFromRss(source: RssSource, deps: Dependencies): Pr
       title: jobTitle.trim(),
       titleFamily: "",
       company: company.trim(),
-      location: lane === "design_jobs" ? "Berlin/Remote" : "Remote",
+      location: isCompanyWatchLane(config, lane) ? "" : "Remote",
       country: "",
       language: /[ığüşöçİĞÜŞÖÇ]/.test(description) ? "tr" : "en",
       workModel: inferWorkModel(description),

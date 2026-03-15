@@ -1,37 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
 import pdf from "pdf-parse";
+import { defaultConfig, loadConfig } from "./config.js";
 import { resolveProfilePath } from "./lib/paths.js";
 import { extractYearRequirement, findFirstMatch, includesAny, normalizeText, pickTopSignals, summarizeToLine } from "./lib/text.js";
-import type { ProfileSummary, SeniorityTarget } from "./types.js";
-
-const DESIGN_SIGNALS = [
-  "figma",
-  "product design",
-  "ux",
-  "ui",
-  "design systems",
-  "visual design",
-  "brand",
-  "motion",
-  "creative",
-  "design engineer",
-  "creative technologist",
-];
-
-const AI_SIGNALS = [
-  "ai",
-  "llm",
-  "agent",
-  "automation",
-  "typescript",
-  "node",
-  "python",
-  "developer tools",
-  "full-stack",
-  "openai",
-  "react",
-];
+import { collectProfileSignals, getEnabledRolePackIds, getRolePack } from "./role-packs.js";
+import type { ProfileSummary, SeniorityTarget, SniperConfig } from "./types.js";
 
 const NEGATED_SENIORITY_PATTERNS = [
   /no\s+(senior|lead|manager|director|head|principal|staff)\s+roles?/i,
@@ -125,15 +99,16 @@ function deriveTargetSeniority(content: string): {
   };
 }
 
-export function deriveProfileSummary(content: string): ProfileSummary {
+export function deriveProfileSummary(content: string, config: SniperConfig = defaultConfig): ProfileSummary {
   const normalized = normalizeText(content);
   const roleFamilies: string[] = [];
 
-  if (includesAny(normalized, DESIGN_SIGNALS)) {
-    roleFamilies.push("design");
-  }
-  if (includesAny(normalized, AI_SIGNALS)) {
-    roleFamilies.push("ai_coding");
+  for (const lane of getEnabledRolePackIds(config)) {
+    const pack = getRolePack(config, lane);
+    const signals = pack ? [...(pack.profileSignals ?? []), ...pack.keywords] : [];
+    if (signals.length && includesAny(normalized, signals)) {
+      roleFamilies.push(lane);
+    }
   }
   if (roleFamilies.length === 0) {
     roleFamilies.push("generalist");
@@ -151,14 +126,11 @@ export function deriveProfileSummary(content: string): ProfileSummary {
     ...(includesAny(normalized, ["english", "ingilizce"]) ? ["en"] : []),
   ];
 
-  const toolSignals = [
-    ...pickTopSignals(normalized, DESIGN_SIGNALS, 6),
-    ...pickTopSignals(normalized, AI_SIGNALS, 6),
-  ].slice(0, 10);
+  const toolSignals = pickTopSignals(normalized, collectProfileSignals(config), 10);
 
   const focusHint = findFirstMatch(
     normalized,
-    ["design engineer", "creative technologist", "product design", "agent", "automation", "design systems"],
+    collectProfileSignals(config),
   );
 
   return {
@@ -186,7 +158,7 @@ export async function onboardProfile(
   const profilePath = resolveProfilePath(baseDir, "profile.json");
   fs.writeFileSync(cvPath, `${content.trim()}\n`);
 
-  const profile = deriveProfileSummary(content);
+  const profile = deriveProfileSummary(content, loadConfig(baseDir));
   fs.writeFileSync(profilePath, `${JSON.stringify(profile, null, 2)}\n`);
 
   return { cvText: content, profile };
@@ -208,7 +180,7 @@ export function loadProfile(baseDir: string): { cvText: string; profile: Profile
     };
   }
 
-  const profile = deriveProfileSummary(cvText);
+  const profile = deriveProfileSummary(cvText, loadConfig(baseDir));
   fs.writeFileSync(profilePath, `${JSON.stringify(profile, null, 2)}\n`);
   return { cvText, profile };
 }

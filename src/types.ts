@@ -1,7 +1,9 @@
-export type SearchLane = "design_jobs" | "ai_coding_jobs" | "company_watch";
+export type LaneId = string;
+export type SearchLane = LaneId;
 export type SourceType = "search" | "rss" | "ats" | "page" | "sitemap" | "career_page" | "team_page";
 export type WorkModel = "remote" | "hybrid" | "onsite" | "unknown";
 export type Category = "Good Match" | "Mid Match" | "Low Match" | "Excluded";
+export type LaneType = "job" | "company_watch";
 export type ContactKind =
   | "application_email"
   | "careers_email"
@@ -18,13 +20,26 @@ export type SeniorityTarget = "intern" | "junior" | "mid" | "senior";
 export type PageIntent = "job" | "company" | "contact" | "unknown";
 export type PageType = "job_detail" | "career_hub" | "team_page" | "contact_page" | "about_page" | "generic";
 
+export interface RolePackTitleFamily {
+  family: string;
+  terms: string[];
+}
+
 export interface LaneConfig {
+  label: string;
+  type: LaneType;
   enabled: boolean;
   queries: {
     tr: string[];
     en: string[];
   };
   keywords: string[];
+  queryTerms?: string[];
+  profileSignals?: string[];
+  titleFamilies?: RolePackTitleFamily[];
+  mismatchTerms?: string[];
+  startupTerms?: string[];
+  companyTerms?: string[];
 }
 
 export interface RssSource {
@@ -36,7 +51,7 @@ export interface AtsBoardSource {
   name: string;
   provider: string;
   url: string;
-  lane?: SearchLane;
+  lane?: LaneId;
 }
 
 export interface SniperConfig {
@@ -54,7 +69,7 @@ export interface SniperConfig {
     priorityCountries: string[];
     remoteScopes: string[];
   };
-  lanes: Record<SearchLane, LaneConfig>;
+  lanes: Record<LaneId, LaneConfig>;
   sources: {
     rss: RssSource[];
     atsBoards: AtsBoardSource[];
@@ -64,7 +79,7 @@ export interface SniperConfig {
     keywords: string[];
     titleTerms: string[];
     softPenaltyTerms: string[];
-    lanes: Record<SearchLane, string[]>;
+    lanes: Record<LaneId, string[]>;
   };
   sheets: {
     spreadsheetId: string;
@@ -91,7 +106,7 @@ export interface ProfileSummary {
 }
 
 export interface SearchQuery {
-  lane: SearchLane;
+  lane: LaneId;
   locale: "tr" | "en";
   query: string;
   family: "job" | "company" | "contact";
@@ -99,7 +114,7 @@ export interface SearchQuery {
 }
 
 export interface SearchResult {
-  lane: SearchLane;
+  lane: LaneId;
   title: string;
   url: string;
   snippet: string;
@@ -112,7 +127,7 @@ export interface DiscoveryCandidate {
   url: string;
   normalizedUrl: string;
   sourceType: SourceType;
-  lane: SearchLane;
+  lane: LaneId;
   intent: PageIntent;
   query?: string;
   confidence: number;
@@ -137,7 +152,7 @@ export interface PageRecord {
 }
 
 export interface ListingCandidate {
-  lane: SearchLane;
+  lane: LaneId;
   externalId?: string;
   title: string;
   titleFamily: string;
@@ -278,7 +293,7 @@ export interface JobRecord {
   apply_url: string;
   source: string;
   source_type: SourceType;
-  lane: SearchLane;
+  lane: LaneId;
   status: string;
   category: Category;
   score: number;

@@ -1,5 +1,7 @@
 import { getBaseDir } from "./lib/paths.js";
 import { createApp } from "./app.js";
+import { loadConfig } from "./config.js";
+import { getDefaultCompanyWatchLane } from "./role-packs.js";
 import type { SearchLane } from "./types.js";
 
 function help(): string {
@@ -8,7 +10,7 @@ function help(): string {
     "",
     "Commands:",
     "  onboard <text-or-file>",
-    "  run [--lane <design_jobs|ai_coding_jobs|company_watch>] [--company-watch]",
+    "  run [--lane <lane-id>] [--company-watch]",
     "  digest [limit]",
     "  shortlist [limit]",
     "  draft <job-id>",
@@ -26,12 +28,13 @@ function help(): string {
   ].join("\n");
 }
 
-function parseLane(input?: string): SearchLane | undefined {
+function parseLane(input: string | undefined, baseDir: string): SearchLane | undefined {
   if (!input) return undefined;
-  if (input === "design_jobs" || input === "ai_coding_jobs" || input === "company_watch") {
+  const config = loadConfig(baseDir);
+  if (config.lanes[input]) {
     return input;
   }
-  throw new Error(`Invalid lane: ${input}`);
+  throw new Error(`Invalid lane: ${input}. Configured lanes: ${Object.keys(config.lanes).join(", ")}`);
 }
 
 export async function runCli(argv: string[], baseDir = getBaseDir()): Promise<string> {
@@ -52,7 +55,7 @@ export async function runCli(argv: string[], baseDir = getBaseDir()): Promise<st
     for (let index = 0; index < rest.length; index += 1) {
       const token = rest[index];
       if (token === "--lane") {
-        lane = parseLane(rest[index + 1]);
+        lane = parseLane(rest[index + 1], baseDir);
         index += 1;
       } else if (token === "--company-watch") {
         companyWatchOnly = true;
@@ -96,7 +99,7 @@ export async function runCli(argv: string[], baseDir = getBaseDir()): Promise<st
       } else if (token === "--keyword") {
         mode = "keyword";
       } else if (token === "--lane") {
-        lane = parseLane(rest[index + 1]);
+        lane = parseLane(rest[index + 1], baseDir);
         index += 1;
       } else {
         terms.push(token);
@@ -138,7 +141,7 @@ export async function runCli(argv: string[], baseDir = getBaseDir()): Promise<st
     if (!url) {
       throw new Error("requeue requires a URL.");
     }
-    return app.requeue(url, parseLane(rest[1]) ?? "company_watch");
+    return app.requeue(url, parseLane(rest[1], baseDir) ?? getDefaultCompanyWatchLane(loadConfig(baseDir)));
   }
 
   if (command === "sources" && rest[0] === "test") {

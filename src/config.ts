@@ -1,7 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
 import { ensureDir } from "./lib/paths.js";
-import type { SearchLane, SniperConfig } from "./types.js";
+import { builtInRolePacks } from "./role-packs.js";
+import type { LaneConfig, LaneId, SniperConfig } from "./types.js";
+
+type ConfigOverrides = Omit<Partial<SniperConfig>, "lanes"> & {
+  lanes?: Record<LaneId, Partial<LaneConfig>>;
+};
 
 export const defaultConfig: SniperConfig = {
   search: {
@@ -18,62 +23,7 @@ export const defaultConfig: SniperConfig = {
     priorityCountries: ["Germany", "Deutschland"],
     remoteScopes: ["remote", "hybrid"],
   },
-  lanes: {
-    design_jobs: {
-      enabled: true,
-      queries: {
-        tr: [],
-        en: [
-          "Berlin product designer jobs",
-          "Germany UX UI designer careers",
-          "Berlin design engineer figma react jobs",
-        ],
-      },
-      keywords: [
-        "product designer",
-        "ux",
-        "ui",
-        "figma",
-        "design systems",
-        "creative technologist",
-        "design engineer",
-      ],
-    },
-    ai_coding_jobs: {
-      enabled: true,
-      queries: {
-        tr: [],
-        en: [
-          "Berlin AI engineer jobs",
-          "Germany LLM engineer jobs",
-          "Berlin agent engineer TypeScript Python startup",
-        ],
-      },
-      keywords: [
-        "ai engineer",
-        "llm",
-        "agent",
-        "automation",
-        "typescript",
-        "node",
-        "python",
-        "developer tools",
-        "creative automation",
-      ],
-    },
-    company_watch: {
-      enabled: true,
-      queries: {
-        tr: [],
-        en: [
-          "Berlin AI startup careers",
-          "Germany product design startup team",
-          "creative AI startup Berlin careers",
-        ],
-      },
-      keywords: ["careers", "jobs", "hiring", "team", "startup", "founding", "series a", "seed"],
-    },
-  },
+  lanes: builtInRolePacks,
   sources: {
     rss: [
       { name: "Berlin Startup Jobs Design", url: "https://berlinstartupjobs.com/design/feed/" },
@@ -82,7 +32,7 @@ export const defaultConfig: SniperConfig = {
     atsBoards: [
       { name: "Wellfound Berlin Startups", provider: "wellfound", url: "https://wellfound.com/startups/location/berlin-berlin", lane: "company_watch" },
       { name: "Wellfound Berlin Design Jobs", provider: "wellfound", url: "https://wellfound.com/location/berlin-berlin", lane: "design_jobs" },
-      { name: "Wellfound Berlin AI / Engineering Jobs", provider: "wellfound", url: "https://wellfound.com/location/berlin-berlin", lane: "ai_coding_jobs" }
+      { name: "Wellfound Berlin AI / Engineering Jobs", provider: "wellfound", url: "https://wellfound.com/location/berlin-berlin", lane: "ai_coding_jobs" },
     ],
   },
   blacklist: {
@@ -90,11 +40,7 @@ export const defaultConfig: SniperConfig = {
     keywords: ["account executive", "sales", "gtm", "performance marketing", "chief of staff", "cto", "cfo"],
     titleTerms: ["senior", "lead", "manager", "director", "head", "vp", "principal", "staff", "founder"],
     softPenaltyTerms: ["stakeholder management", "people management", "budget ownership", "consulting"],
-    lanes: {
-      design_jobs: [],
-      ai_coding_jobs: [],
-      company_watch: [],
-    },
+    lanes: Object.fromEntries(Object.keys(builtInRolePacks).map((lane) => [lane, []])),
   },
   sheets: {
     spreadsheetId: "",
@@ -109,28 +55,52 @@ export const defaultConfig: SniperConfig = {
   },
 };
 
-function mergeLane(base: SniperConfig["lanes"][SearchLane], override?: Partial<SniperConfig["lanes"][SearchLane]>) {
+function mergeLane(base: LaneConfig | undefined, override?: Partial<LaneConfig>): LaneConfig {
   return {
-    ...base,
-    ...(override ?? {}),
+    label: override?.label ?? base?.label ?? "Custom Lane",
+    type: override?.type ?? base?.type ?? "job",
+    enabled: override?.enabled ?? base?.enabled ?? true,
     queries: {
-      tr: override?.queries?.tr ?? base.queries.tr,
-      en: override?.queries?.en ?? base.queries.en,
+      tr: override?.queries?.tr ?? base?.queries.tr ?? [],
+      en: override?.queries?.en ?? base?.queries.en ?? [],
     },
-    keywords: override?.keywords ?? base.keywords,
+    keywords: override?.keywords ?? base?.keywords ?? [],
+    queryTerms: override?.queryTerms ?? base?.queryTerms ?? base?.keywords ?? [],
+    profileSignals: override?.profileSignals ?? base?.profileSignals ?? base?.keywords ?? [],
+    titleFamilies: override?.titleFamilies ?? base?.titleFamilies ?? [],
+    mismatchTerms: override?.mismatchTerms ?? base?.mismatchTerms ?? [],
+    startupTerms: override?.startupTerms ?? base?.startupTerms ?? [],
+    companyTerms: override?.companyTerms ?? base?.companyTerms ?? [],
   };
 }
 
-function mergeConfig(base: SniperConfig, overrides: Partial<SniperConfig>): SniperConfig {
+function mergeLanes(
+  base: Record<LaneId, LaneConfig>,
+  overrides?: Record<LaneId, Partial<LaneConfig>>,
+): Record<LaneId, LaneConfig> {
+  const allLaneIds = new Set<LaneId>([...Object.keys(base), ...Object.keys(overrides ?? {})]);
+  const lanes: Record<LaneId, LaneConfig> = {};
+  for (const lane of allLaneIds) {
+    lanes[lane] = mergeLane(base[lane], overrides?.[lane]);
+  }
+  return lanes;
+}
+
+function mergeLaneBlacklists(base: Record<LaneId, string[]>, overrides?: Record<LaneId, string[]>): Record<LaneId, string[]> {
+  const allLaneIds = new Set<LaneId>([...Object.keys(base), ...Object.keys(overrides ?? {})]);
+  const lanes: Record<LaneId, string[]> = {};
+  for (const lane of allLaneIds) {
+    lanes[lane] = overrides?.[lane] ?? base[lane] ?? [];
+  }
+  return lanes;
+}
+
+function mergeConfig(base: SniperConfig, overrides: ConfigOverrides): SniperConfig {
   return {
     ...base,
     ...overrides,
     search: { ...base.search, ...(overrides.search ?? {}) },
-    lanes: {
-      design_jobs: mergeLane(base.lanes.design_jobs, overrides.lanes?.design_jobs),
-      ai_coding_jobs: mergeLane(base.lanes.ai_coding_jobs, overrides.lanes?.ai_coding_jobs),
-      company_watch: mergeLane(base.lanes.company_watch, overrides.lanes?.company_watch),
-    },
+    lanes: mergeLanes(base.lanes, overrides.lanes),
     sources: {
       rss: overrides.sources?.rss ?? base.sources.rss,
       atsBoards: overrides.sources?.atsBoards ?? base.sources.atsBoards,
@@ -140,11 +110,7 @@ function mergeConfig(base: SniperConfig, overrides: Partial<SniperConfig>): Snip
       keywords: overrides.blacklist?.keywords ?? base.blacklist.keywords,
       titleTerms: overrides.blacklist?.titleTerms ?? base.blacklist.titleTerms,
       softPenaltyTerms: overrides.blacklist?.softPenaltyTerms ?? base.blacklist.softPenaltyTerms,
-      lanes: {
-        design_jobs: overrides.blacklist?.lanes?.design_jobs ?? base.blacklist.lanes.design_jobs,
-        ai_coding_jobs: overrides.blacklist?.lanes?.ai_coding_jobs ?? base.blacklist.lanes.ai_coding_jobs,
-        company_watch: overrides.blacklist?.lanes?.company_watch ?? base.blacklist.lanes.company_watch,
-      },
+      lanes: mergeLaneBlacklists(base.blacklist.lanes, overrides.blacklist?.lanes),
     },
     sheets: {
       ...base.sheets,
@@ -154,7 +120,7 @@ function mergeConfig(base: SniperConfig, overrides: Partial<SniperConfig>): Snip
   };
 }
 
-function migrateLegacyConfig(raw: Record<string, unknown>): Partial<SniperConfig> {
+function migrateLegacyConfig(raw: Record<string, unknown>): ConfigOverrides {
   const search = (raw.search ?? {}) as Record<string, unknown>;
   const legacySources = Array.isArray(raw.sources) ? (raw.sources as Array<Record<string, unknown>>) : [];
   const blacklist = (raw.blacklist ?? {}) as Record<string, unknown>;
@@ -165,6 +131,13 @@ function migrateLegacyConfig(raw: Record<string, unknown>): Partial<SniperConfig
     ? search.exclude_keywords.filter((entry): entry is string => typeof entry === "string")
     : [];
 
+  const lanes = Object.fromEntries(
+    Object.keys(defaultConfig.lanes).map((lane) => [
+      lane,
+      { keywords: includeKeywords } as Partial<LaneConfig>,
+    ]),
+  ) as Record<LaneId, Partial<LaneConfig>>;
+
   return {
     search: {
       minScoreThreshold:
@@ -172,11 +145,7 @@ function migrateLegacyConfig(raw: Record<string, unknown>): Partial<SniperConfig
           ? search.min_match_threshold
           : defaultConfig.search.minScoreThreshold,
     } as Partial<SniperConfig["search"]> as SniperConfig["search"],
-    lanes: {
-      design_jobs: { keywords: includeKeywords } as SniperConfig["lanes"]["design_jobs"],
-      ai_coding_jobs: { keywords: includeKeywords } as SniperConfig["lanes"]["ai_coding_jobs"],
-      company_watch: { keywords: includeKeywords } as SniperConfig["lanes"]["company_watch"],
-    } as SniperConfig["lanes"],
+    lanes,
     sources: {
       rss: legacySources
         .filter((entry) => entry.type === "rss" && typeof entry.url === "string")
@@ -195,6 +164,25 @@ function migrateLegacyConfig(raw: Record<string, unknown>): Partial<SniperConfig
   };
 }
 
+function normalizeModernConfig(parsed: Record<string, unknown>): ConfigOverrides {
+  const partial = parsed as ConfigOverrides;
+  if (!partial.lanes) {
+    return partial;
+  }
+  return {
+    ...partial,
+    lanes: Object.fromEntries(
+      Object.entries(partial.lanes).map(([lane, value]) => [lane, value]),
+    ) as Record<LaneId, Partial<LaneConfig>>,
+    blacklist: partial.blacklist
+      ? {
+          ...partial.blacklist,
+          lanes: partial.blacklist.lanes ?? {},
+        }
+      : undefined,
+  };
+}
+
 export function loadConfig(baseDir: string): SniperConfig {
   const configPath = path.join(baseDir, "config.json");
   if (!fs.existsSync(configPath)) {
@@ -204,13 +192,10 @@ export function loadConfig(baseDir: string): SniperConfig {
   const parsed = JSON.parse(fs.readFileSync(configPath, "utf8")) as Record<string, unknown>;
   const looksModern =
     typeof parsed.lanes === "object" &&
-    parsed.lanes !== null &&
-    typeof parsed.sources === "object" &&
-    parsed.sources !== null &&
-    !Array.isArray(parsed.sources);
+    parsed.lanes !== null;
 
   return looksModern
-    ? mergeConfig(defaultConfig, parsed as Partial<SniperConfig>)
+    ? mergeConfig(defaultConfig, normalizeModernConfig(parsed))
     : mergeConfig(defaultConfig, migrateLegacyConfig(parsed));
 }
 

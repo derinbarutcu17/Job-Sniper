@@ -16,23 +16,23 @@ It keeps a SQLite database as the source of truth, searches the public web plus 
 - Google Sheets sync with manual columns preserved
 - OpenClaw-friendly command surface for scouting, reviewing, and drafting
 
-## What it is good at today
+## What it is now
 
-Out of the box, the repo ships with three built-in lanes:
+This repo now runs as a role-pack-driven engine.
+
+That means:
+
+- lanes are data-driven, not hardcoded enums
+- the shipped presets are just built-in packs, not special-case code paths
+- you can define new lanes for other fields in `config.json` without editing the scoring engine, query builder, or CLI
+
+The repo still ships with three first-party presets:
 
 - `design_jobs`
 - `ai_coding_jobs`
 - `company_watch`
 
-That means the current presets, lexicons, and default queries are strongest for:
-
-- design and product roles
-- AI/software and coding-adjacent roles
-- startup/company scouting and cold-outreach workflows
-
-It is still customizable for different geographies, profiles, and search markets through `config.json` and onboarding.
-
-If you want a truly arbitrary "any role, any field" lane engine, that is a larger product change. The current codebase is best described as a configurable job-intelligence tool with built-in presets, not a fully field-agnostic search platform.
+They exist to preserve the current working workflow, but they are examples of the engine, not the limit of it.
 
 ## What it does
 
@@ -83,7 +83,7 @@ OpenClaw should expose this as `/sniper`.
 
 ```text
 /sniper onboard <cv text or file path>
-/sniper run [--lane <design_jobs|ai_coding_jobs|company_watch>] [--company-watch]
+/sniper run [--lane <lane-id>] [--company-watch]
 /sniper digest [limit]
 /sniper shortlist [limit]
 /sniper draft <job-id>
@@ -100,27 +100,84 @@ OpenClaw should expose this as `/sniper`.
 
 Older `!sniper ...` examples are deprecated.
 
-## Customization
+## Role packs and customization
 
 This tool is not tied to one person, one city, or one hiring market.
 
 Main customization points:
 
 - `config.json`
-  Set target cities, countries, remote preferences, RSS feeds, ATS boards, blacklists, and sheet tabs.
+  Set target cities, countries, remote preferences, RSS feeds, ATS boards, blacklists, sheet tabs, and your lane definitions.
 - `profile/cv.md` and `profile/profile.json`
   Local runtime profile files created and updated through onboarding.
-- Search lanes
-  Enable or disable `design_jobs`, `ai_coding_jobs`, and `company_watch`.
+- Role packs
+  Add, remove, or tune lanes for any field.
 - Sheet workflow
   Adapt the `Jobs`, `Companies`, and `Contacts` tabs to your own research and outreach process.
+
+Each lane is a role pack with:
+
+- `label`
+- `type`
+- `queries`
+- `keywords`
+- optional `queryTerms`
+- optional `profileSignals`
+- optional `titleFamilies`
+- optional `mismatchTerms`
+- optional `startupTerms`
+- optional `companyTerms`
 
 Typical uses:
 
 - switch the search market from one city or country to another
 - run a remote-only search
 - use it for one candidate, a recruiting workflow, or a coaching workflow
+- add a new field like policy, biotech, legal ops, data science, or climate research
 - use it only for research, or for research plus outreach
+
+### Example: add a new lane for climate policy
+
+```json
+{
+  "lanes": {
+    "policy_jobs": {
+      "label": "Policy Jobs",
+      "type": "job",
+      "enabled": true,
+      "queries": {
+        "tr": [],
+        "en": [
+          "Berlin climate policy jobs",
+          "Germany public affairs analyst roles"
+        ]
+      },
+      "keywords": ["policy analyst", "climate policy", "public affairs"],
+      "queryTerms": ["policy analyst", "public policy associate"],
+      "profileSignals": ["policy", "climate policy", "research", "public affairs"],
+      "titleFamilies": [
+        {
+          "family": "Policy Analyst",
+          "terms": ["policy analyst", "public policy associate"]
+        }
+      ],
+      "mismatchTerms": ["sales", "account executive"]
+    }
+  },
+  "blacklist": {
+    "lanes": {
+      "policy_jobs": []
+    }
+  }
+}
+```
+
+After adding the lane:
+
+```text
+/sniper run --lane policy_jobs
+/sniper blacklist add --lane policy_jobs --keyword lobbying
+```
 
 ## Typical workflow
 
@@ -142,6 +199,9 @@ Or use a local file:
 
 ```text
 /sniper run
+/sniper run --lane design_jobs
+/sniper run --lane policy_jobs
+/sniper run --company-watch
 ```
 
 This will:

@@ -15,6 +15,8 @@
   },
   "lanes": {
     "design_jobs": {
+      "label": "Design Jobs",
+      "type": "job",
       "enabled": true,
       "queries": {
         "tr": [],
@@ -32,9 +34,21 @@
         "design systems",
         "creative technologist",
         "design engineer"
-      ]
+      ],
+      "queryTerms": ["product designer", "ux designer", "ui designer", "design engineer", "creative technologist"],
+      "profileSignals": ["figma", "product design", "ux", "ui", "design systems", "visual design", "brand", "motion", "creative", "design engineer", "creative technologist"],
+      "titleFamilies": [
+        { "family": "Product Designer", "terms": ["product designer", "product design", "ürün tasarımcısı"] },
+        { "family": "UI/UX Designer", "terms": ["ui/ux designer", "ux designer", "ui designer", "ux", "ui"] },
+        { "family": "Design Engineer", "terms": ["design engineer", "creative technologist"] }
+      ],
+      "mismatchTerms": ["sales manager", "account executive", "business development", "backend"],
+      "startupTerms": ["seed", "series a", "founding", "small team", "0-1"],
+      "companyTerms": ["startup", "studio", "builder"]
     },
     "ai_coding_jobs": {
+      "label": "AI Coding Jobs",
+      "type": "job",
       "enabled": true,
       "queries": {
         "tr": [],
@@ -54,9 +68,22 @@
         "python",
         "developer tools",
         "creative automation"
-      ]
+      ],
+      "queryTerms": ["ai engineer", "llm engineer", "agent engineer", "automation engineer", "genai product builder"],
+      "profileSignals": ["ai", "llm", "agent", "automation", "typescript", "node", "python", "developer tools", "full-stack", "openai", "react"],
+      "titleFamilies": [
+        { "family": "AI Engineer", "terms": ["ai engineer", "ml engineer", "llm engineer"] },
+        { "family": "Automation Engineer", "terms": ["automation engineer", "agent engineer"] },
+        { "family": "GenAI Product Builder", "terms": ["genai", "agent workflows", "ai product"] },
+        { "family": "Frontend Engineer", "terms": ["frontend engineer", "front-end engineer", "react developer"] }
+      ],
+      "mismatchTerms": ["sales manager", "account executive", "business development", "machine learning intern"],
+      "startupTerms": ["seed", "series a", "founding", "small team", "0-1"],
+      "companyTerms": ["startup", "builder", "developer tools"]
     },
     "company_watch": {
+      "label": "Company Watch",
+      "type": "company_watch",
       "enabled": true,
       "queries": {
         "tr": [],
@@ -66,7 +93,11 @@
           "creative AI startup Berlin careers"
         ]
       },
-      "keywords": ["careers", "jobs", "hiring", "team", "startup", "founding", "series a", "seed"]
+      "keywords": ["careers", "jobs", "hiring", "team", "startup", "founding", "series a", "seed"],
+      "queryTerms": ["AI startup", "product design startup", "creative AI company"],
+      "profileSignals": ["careers", "hiring", "team", "startup", "founding"],
+      "companyTerms": ["startup", "studio", "builder", "careers", "hiring", "team"],
+      "startupTerms": ["seed", "series a", "founding", "small team", "0-1"]
     }
   },
   "sources": {
