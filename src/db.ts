@@ -4,13 +4,19 @@ import { resolveDataPath } from "./lib/paths.js";
 import { uniqueNonEmpty } from "./lib/text.js";
 import { canonicalCompanyKey, canonicalContactKey, canonicalJobKey, domainFromUrl, domainTitleFingerprint } from "./lib/url.js";
 import type {
+  CompanyDecisionSnapshot,
   CompanyRecordInput,
   ConfidenceBand,
   ContactCandidate,
+  ContactChannel,
+  ContactLogEntry,
   ContactRecordInput,
   DiscoveryCandidate,
+  JobDecisionSnapshot,
   JobRecord,
   ListingCandidate,
+  OutcomeLogEntry,
+  OutcomeResult,
   ProfileSummary,
   RunSummary,
   ScoreBreakdown,
@@ -69,6 +75,15 @@ function createSchema(db: Database.Database): void {
       hiring_signal_score REAL DEFAULT 0,
       contactability_score REAL DEFAULT 0,
       is_startup_candidate INTEGER DEFAULT 0,
+      recommendation TEXT DEFAULT 'watch',
+      recommendation_reason TEXT DEFAULT '',
+      best_route TEXT DEFAULT 'watch_company',
+      pitch_theme TEXT DEFAULT 'generalist',
+      pitch_angle TEXT DEFAULT '',
+      pitch_evidence TEXT DEFAULT '[]',
+      direct_contact_count INTEGER DEFAULT 0,
+      reachable_now INTEGER DEFAULT 0,
+      priority_band TEXT DEFAULT 'low',
       last_seen_at TEXT DEFAULT '',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
@@ -149,6 +164,20 @@ function createSchema(db: Database.Database): void {
       priority TEXT DEFAULT '',
       outreach_state TEXT DEFAULT '',
       manual_contact_override TEXT DEFAULT '',
+      recommendation TEXT DEFAULT 'watch',
+      recommendation_reason TEXT DEFAULT '',
+      decision_explanation_json TEXT DEFAULT '{}',
+      recommended_route TEXT DEFAULT 'no_action',
+      route_confidence REAL DEFAULT 0,
+      route_rationale TEXT DEFAULT '',
+      pitch_theme TEXT DEFAULT 'generalist',
+      pitch_angle TEXT DEFAULT '',
+      pitch_evidence TEXT DEFAULT '[]',
+      strongest_profile_signal TEXT DEFAULT '',
+      strongest_company_signal TEXT DEFAULT '',
+      outreach_leverage_score REAL DEFAULT 0,
+      interview_probability_band TEXT DEFAULT 'low',
+      opportunity_cost_band TEXT DEFAULT 'medium',
       FOREIGN KEY(company_id) REFERENCES companies(id)
     );
 
@@ -205,7 +234,38 @@ function createSchema(db: Database.Database): void {
       jobs_eligible INTEGER DEFAULT 0,
       companies_discovered INTEGER DEFAULT 0,
       contacts_discovered INTEGER DEFAULT 0,
+      actionable_count INTEGER DEFAULT 0,
+      apply_now_count INTEGER DEFAULT 0,
+      cold_email_count INTEGER DEFAULT 0,
+      enrich_first_count INTEGER DEFAULT 0,
+      watch_count INTEGER DEFAULT 0,
+      discard_count INTEGER DEFAULT 0,
+      direct_contact_companies INTEGER DEFAULT 0,
+      founder_surface_companies INTEGER DEFAULT 0,
+      average_outreach_leverage_score REAL DEFAULT 0,
       source_breakdown_json TEXT DEFAULT '{}'
+    );
+
+    CREATE TABLE IF NOT EXISTS contact_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      company_id INTEGER NOT NULL,
+      job_id INTEGER,
+      channel TEXT NOT NULL,
+      note TEXT DEFAULT '',
+      created_at TEXT NOT NULL,
+      FOREIGN KEY(company_id) REFERENCES companies(id),
+      FOREIGN KEY(job_id) REFERENCES jobs(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS outcome_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      company_id INTEGER NOT NULL,
+      job_id INTEGER,
+      result TEXT NOT NULL,
+      note TEXT DEFAULT '',
+      created_at TEXT NOT NULL,
+      FOREIGN KEY(company_id) REFERENCES companies(id),
+      FOREIGN KEY(job_id) REFERENCES jobs(id)
     );
 
     CREATE TABLE IF NOT EXISTS sheet_sync_state (
@@ -238,6 +298,15 @@ function patchExistingSchema(db: Database.Database): void {
     ["hiring_signal_score", "REAL DEFAULT 0"],
     ["contactability_score", "REAL DEFAULT 0"],
     ["is_startup_candidate", "INTEGER DEFAULT 0"],
+    ["recommendation", "TEXT DEFAULT 'watch'"],
+    ["recommendation_reason", "TEXT DEFAULT ''"],
+    ["best_route", "TEXT DEFAULT 'watch_company'"],
+    ["pitch_theme", "TEXT DEFAULT 'generalist'"],
+    ["pitch_angle", "TEXT DEFAULT ''"],
+    ["pitch_evidence", "TEXT DEFAULT '[]'"],
+    ["direct_contact_count", "INTEGER DEFAULT 0"],
+    ["reachable_now", "INTEGER DEFAULT 0"],
+    ["priority_band", "TEXT DEFAULT 'low'"],
   ] as const;
 
   const contactColumns = [
@@ -248,6 +317,35 @@ function patchExistingSchema(db: Database.Database): void {
     ["is_public", "INTEGER DEFAULT 1"],
     ["last_verified_at", "TEXT DEFAULT ''"],
     ["page_type", "TEXT DEFAULT 'generic'"],
+  ] as const;
+
+  const jobColumns = [
+    ["recommendation", "TEXT DEFAULT 'watch'"],
+    ["recommendation_reason", "TEXT DEFAULT ''"],
+    ["decision_explanation_json", "TEXT DEFAULT '{}'"],
+    ["recommended_route", "TEXT DEFAULT 'no_action'"],
+    ["route_confidence", "REAL DEFAULT 0"],
+    ["route_rationale", "TEXT DEFAULT ''"],
+    ["pitch_theme", "TEXT DEFAULT 'generalist'"],
+    ["pitch_angle", "TEXT DEFAULT ''"],
+    ["pitch_evidence", "TEXT DEFAULT '[]'"],
+    ["strongest_profile_signal", "TEXT DEFAULT ''"],
+    ["strongest_company_signal", "TEXT DEFAULT ''"],
+    ["outreach_leverage_score", "REAL DEFAULT 0"],
+    ["interview_probability_band", "TEXT DEFAULT 'low'"],
+    ["opportunity_cost_band", "TEXT DEFAULT 'medium'"],
+  ] as const;
+
+  const runMetricColumns = [
+    ["actionable_count", "INTEGER DEFAULT 0"],
+    ["apply_now_count", "INTEGER DEFAULT 0"],
+    ["cold_email_count", "INTEGER DEFAULT 0"],
+    ["enrich_first_count", "INTEGER DEFAULT 0"],
+    ["watch_count", "INTEGER DEFAULT 0"],
+    ["discard_count", "INTEGER DEFAULT 0"],
+    ["direct_contact_companies", "INTEGER DEFAULT 0"],
+    ["founder_surface_companies", "INTEGER DEFAULT 0"],
+    ["average_outreach_leverage_score", "REAL DEFAULT 0"],
   ] as const;
 
   for (const [name, type] of companyColumns) {
@@ -261,6 +359,20 @@ function patchExistingSchema(db: Database.Database): void {
       db.exec(`ALTER TABLE contacts ADD COLUMN ${name} ${type}`);
     }
   }
+
+  for (const [name, type] of jobColumns) {
+    if (!hasColumn(db, "jobs", name)) {
+      db.exec(`ALTER TABLE jobs ADD COLUMN ${name} ${type}`);
+    }
+  }
+
+  for (const [name, type] of runMetricColumns) {
+    if (!hasColumn(db, "run_metrics", name)) {
+      db.exec(`ALTER TABLE run_metrics ADD COLUMN ${name} ${type}`);
+    }
+  }
+
+  createSchema(db);
 }
 
 function migrateLegacyJobs(db: Database.Database): void {
@@ -496,13 +608,16 @@ export function upsertCompany(db: Database.Database, input: CompanyRecordInput):
       contact_url, press_url, linkedin_url, description, source_urls, public_contacts,
       startup_signals, hiring_signals, founder_names, cities, size_band, stage_text,
       remote_policy, open_role_count, startup_score, company_fit_score, hiring_signal_score,
-      contactability_score, is_startup_candidate, last_seen_at, created_at, updated_at
+      contactability_score, is_startup_candidate, recommendation, recommendation_reason, best_route,
+      pitch_theme, pitch_angle, pitch_evidence, direct_contact_count, reachable_now, priority_band,
+      last_seen_at, created_at, updated_at
     ) VALUES (
       @canonical_key, @name, @domain, @location, @company_url, @careers_url, @about_url, @team_url,
       @contact_url, @press_url, @linkedin_url, @description, @source_urls, @public_contacts,
       @startup_signals, @hiring_signals, @founder_names, @cities, @size_band, @stage_text,
-      @remote_policy, @open_role_count, @startup_score, @company_fit_score, @hiring_signal_score,
-      @contactability_score, @is_startup_candidate, @last_seen_at, @created_at, @updated_at
+      @remote_policy, @open_role_count, @startup_score, @company_fit_score, @hiring_signal_score, @contactability_score,
+      @is_startup_candidate, @recommendation, @recommendation_reason, @best_route, @pitch_theme, @pitch_angle,
+      @pitch_evidence, @direct_contact_count, @reachable_now, @priority_band, @last_seen_at, @created_at, @updated_at
     )
     ON CONFLICT(canonical_key) DO UPDATE SET
       name = excluded.name,
@@ -531,6 +646,15 @@ export function upsertCompany(db: Database.Database, input: CompanyRecordInput):
       hiring_signal_score = excluded.hiring_signal_score,
       contactability_score = excluded.contactability_score,
       is_startup_candidate = excluded.is_startup_candidate,
+      recommendation = excluded.recommendation,
+      recommendation_reason = excluded.recommendation_reason,
+      best_route = excluded.best_route,
+      pitch_theme = excluded.pitch_theme,
+      pitch_angle = excluded.pitch_angle,
+      pitch_evidence = excluded.pitch_evidence,
+      direct_contact_count = excluded.direct_contact_count,
+      reachable_now = excluded.reachable_now,
+      priority_band = excluded.priority_band,
       last_seen_at = excluded.last_seen_at,
       updated_at = excluded.updated_at
   `).run({
@@ -561,6 +685,15 @@ export function upsertCompany(db: Database.Database, input: CompanyRecordInput):
     hiring_signal_score: input.hiringSignalScore,
     contactability_score: input.contactabilityScore,
     is_startup_candidate: input.isStartupCandidate ? 1 : 0,
+    recommendation: input.recommendation ?? "watch",
+    recommendation_reason: input.recommendationReason ?? "",
+    best_route: input.bestRoute ?? "watch_company",
+    pitch_theme: input.pitchTheme ?? "generalist",
+    pitch_angle: input.pitchAngle ?? "",
+    pitch_evidence: JSON.stringify(uniqueNonEmpty(input.pitchEvidence ?? [])),
+    direct_contact_count: input.directContactCount ?? uniqueNonEmpty(input.publicContacts).length,
+    reachable_now: input.reachableNow ? 1 : 0,
+    priority_band: input.priorityBand ?? "low",
     last_seen_at: timestamp,
     created_at: timestamp,
     updated_at: timestamp,
@@ -652,6 +785,7 @@ export function upsertJob(
   profile: ProfileSummary,
   breakdown: ScoreBreakdown,
   eligibility: string,
+  decision?: JobDecisionSnapshot,
 ): { inserted: boolean; updated: boolean; excluded: boolean; companyTouched: boolean; contactsTouched: number } {
   const domain = domainFromUrl(listing.companyUrl || listing.url);
   const companyKey = canonicalCompanyKey(listing.company, domain);
@@ -684,6 +818,25 @@ export function upsertJob(
     hiringSignalScore: breakdown.freshnessFit,
     contactabilityScore: contactabilityFromContacts(listing.publicContacts),
     isStartupCandidate: breakdown.startupFit > 0,
+    recommendation: decision?.recommendation === "apply_now" ? "enrich_first" : decision?.recommendation,
+    recommendationReason: decision?.recommendationReason,
+    bestRoute:
+      decision?.recommendedRoute === "ats_only"
+        ? "ats_plus_cold_email"
+        : decision?.recommendedRoute === "no_action"
+          ? "watch_company"
+          : decision?.recommendedRoute,
+    pitchTheme: decision?.pitchTheme,
+    pitchAngle: decision?.pitchAngle,
+    pitchEvidence: decision?.pitchEvidence,
+    directContactCount: listing.publicContacts.filter((contact) => Boolean(contact.email || contact.linkedinUrl)).length,
+    reachableNow: Boolean(listing.publicContacts.length || listing.teamUrl || listing.contactUrl),
+    priorityBand:
+      decision?.recommendation === "apply_now" || decision?.recommendation === "cold_email"
+        ? "high"
+        : decision?.recommendation === "enrich_first"
+          ? "medium"
+          : "low",
     lastSeenAt: nowIso(),
   });
 
@@ -724,7 +877,10 @@ export function upsertJob(
       outreach_draft, public_contacts, source_urls, raw_json, posted_at, valid_through, department, experience_years_text,
       remote_scope, parse_confidence, source_confidence, freshness_score, contactability_score, company_fit_score,
       startup_fit_score, is_real_job_page, last_seen_at, created_at, updated_at, manual_status, owner_notes, priority,
-      outreach_state, manual_contact_override
+      outreach_state, manual_contact_override, recommendation, recommendation_reason, decision_explanation_json,
+      recommended_route, route_confidence, route_rationale, pitch_theme, pitch_angle, pitch_evidence,
+      strongest_profile_signal, strongest_company_signal, outreach_leverage_score, interview_probability_band,
+      opportunity_cost_band
     ) VALUES (
       @canonical_key, @duplicate_group_key, @external_id, @company_id, @company_name, @title, @title_family, @location,
       @country, @language, @work_model, @employment_type, @salary, @description, @url, @apply_url, @source, @source_type,
@@ -732,7 +888,10 @@ export function upsertJob(
       @outreach_draft, @public_contacts, @source_urls, @raw_json, @posted_at, @valid_through, @department, @experience_years_text,
       @remote_scope, @parse_confidence, @source_confidence, @freshness_score, @contactability_score, @company_fit_score,
       @startup_fit_score, @is_real_job_page, @last_seen_at, @created_at, @updated_at, @manual_status, @owner_notes, @priority,
-      @outreach_state, @manual_contact_override
+      @outreach_state, @manual_contact_override, @recommendation, @recommendation_reason, @decision_explanation_json,
+      @recommended_route, @route_confidence, @route_rationale, @pitch_theme, @pitch_angle, @pitch_evidence,
+      @strongest_profile_signal, @strongest_company_signal, @outreach_leverage_score, @interview_probability_band,
+      @opportunity_cost_band
     )
     ON CONFLICT(canonical_key) DO UPDATE SET
       duplicate_group_key = excluded.duplicate_group_key,
@@ -777,6 +936,21 @@ export function upsertJob(
       is_real_job_page = excluded.is_real_job_page,
       last_seen_at = excluded.last_seen_at,
       updated_at = excluded.updated_at
+      ,
+      recommendation = excluded.recommendation,
+      recommendation_reason = excluded.recommendation_reason,
+      decision_explanation_json = excluded.decision_explanation_json,
+      recommended_route = excluded.recommended_route,
+      route_confidence = excluded.route_confidence,
+      route_rationale = excluded.route_rationale,
+      pitch_theme = excluded.pitch_theme,
+      pitch_angle = excluded.pitch_angle,
+      pitch_evidence = excluded.pitch_evidence,
+      strongest_profile_signal = excluded.strongest_profile_signal,
+      strongest_company_signal = excluded.strongest_company_signal,
+      outreach_leverage_score = excluded.outreach_leverage_score,
+      interview_probability_band = excluded.interview_probability_band,
+      opportunity_cost_band = excluded.opportunity_cost_band
   `).run({
     canonical_key: canonicalKey,
     duplicate_group_key: duplicateGroupKey,
@@ -828,6 +1002,20 @@ export function upsertJob(
     priority: "",
     outreach_state: "",
     manual_contact_override: "",
+    recommendation: decision?.recommendation ?? (excluded ? "discard" : "watch"),
+    recommendation_reason: decision?.recommendationReason ?? "",
+    decision_explanation_json: JSON.stringify(decision?.explanation ?? {}),
+    recommended_route: decision?.recommendedRoute ?? "no_action",
+    route_confidence: decision?.routeConfidence ?? 0,
+    route_rationale: decision?.routeRationale ?? "",
+    pitch_theme: decision?.pitchTheme ?? "generalist",
+    pitch_angle: decision?.pitchAngle ?? "",
+    pitch_evidence: JSON.stringify(uniqueNonEmpty(decision?.pitchEvidence ?? [])),
+    strongest_profile_signal: decision?.strongestProfileSignal ?? "",
+    strongest_company_signal: decision?.strongestCompanySignal ?? "",
+    outreach_leverage_score: decision?.outreachLeverageScore ?? 0,
+    interview_probability_band: decision?.interviewProbabilityBand ?? "low",
+    opportunity_cost_band: decision?.opportunityCostBand ?? "medium",
   });
 
   db.prepare(`
@@ -856,8 +1044,9 @@ export function recordRunMetrics(
     INSERT INTO run_metrics (
       started_at, finished_at, total_discovered, total_deduped, total_parsed, fetch_success_rate,
       parse_success_rate, js_fallback_rate, jobs_eligible, companies_discovered, contacts_discovered,
-      source_breakdown_json
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      actionable_count, apply_now_count, cold_email_count, enrich_first_count, watch_count, discard_count,
+      direct_contact_companies, founder_surface_companies, average_outreach_leverage_score, source_breakdown_json
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     nowIso(),
     nowIso(),
@@ -870,6 +1059,15 @@ export function recordRunMetrics(
     summary.totalFound - summary.excluded,
     summary.companiesTouched,
     summary.contactsTouched,
+    summary.actionableCount,
+    summary.applyNowCount,
+    summary.coldEmailCount,
+    summary.enrichFirstCount,
+    summary.watchCount,
+    summary.discardCount,
+    summary.directContactCompanies,
+    summary.founderSurfaceCompanies,
+    summary.averageOutreachLeverageScore,
     JSON.stringify(sourceBreakdown),
   );
 }
@@ -902,6 +1100,81 @@ export function listContacts(db: Database.Database, companyKey?: string): Array<
 
 export function getJobById(db: Database.Database, jobId: number): JobRecord | undefined {
   return db.prepare("SELECT * FROM jobs WHERE id = ?").get(jobId) as JobRecord | undefined;
+}
+
+export function getCompanyByRef(db: Database.Database, companyRef: string): Record<string, unknown> | undefined {
+  const maybeId = Number(companyRef);
+  return Number.isFinite(maybeId)
+    ? (db.prepare("SELECT * FROM companies WHERE id = ?").get(maybeId) as Record<string, unknown> | undefined)
+    : (db.prepare("SELECT * FROM companies WHERE canonical_key = ? OR lower(name) = lower(?)").get(companyRef, companyRef) as
+        | Record<string, unknown>
+        | undefined);
+}
+
+export function getJobsForCompany(db: Database.Database, companyId: number): Array<Record<string, unknown>> {
+  return db.prepare("SELECT * FROM jobs WHERE company_id = ? ORDER BY score DESC, updated_at DESC").all(companyId) as Array<Record<string, unknown>>;
+}
+
+export function getContactsForCompanyId(db: Database.Database, companyId: number): Array<Record<string, unknown>> {
+  return db.prepare("SELECT * FROM contacts WHERE company_id = ? ORDER BY updated_at DESC").all(companyId) as Array<Record<string, unknown>>;
+}
+
+export function logContactAttemptRow(
+  db: Database.Database,
+  companyId: number,
+  channel: ContactChannel,
+  note = "",
+  jobId?: number,
+): ContactLogEntry {
+  const createdAt = nowIso();
+  const result = db.prepare("INSERT INTO contact_log (company_id, job_id, channel, note, created_at) VALUES (?, ?, ?, ?, ?)").run(
+    companyId,
+    jobId ?? null,
+    channel,
+    note,
+    createdAt,
+  );
+  return {
+    id: Number(result.lastInsertRowid),
+    company_id: companyId,
+    job_id: jobId ?? null,
+    channel,
+    note,
+    created_at: createdAt,
+  };
+}
+
+export function logOutcomeRow(
+  db: Database.Database,
+  companyId: number,
+  result: OutcomeResult,
+  note = "",
+  jobId?: number,
+): OutcomeLogEntry {
+  const createdAt = nowIso();
+  const insert = db.prepare("INSERT INTO outcome_log (company_id, job_id, result, note, created_at) VALUES (?, ?, ?, ?, ?)").run(
+    companyId,
+    jobId ?? null,
+    result,
+    note,
+    createdAt,
+  );
+  return {
+    id: Number(insert.lastInsertRowid),
+    company_id: companyId,
+    job_id: jobId ?? null,
+    result,
+    note,
+    created_at: createdAt,
+  };
+}
+
+export function listContactLog(db: Database.Database): ContactLogEntry[] {
+  return db.prepare("SELECT * FROM contact_log ORDER BY created_at DESC").all() as ContactLogEntry[];
+}
+
+export function listOutcomeLog(db: Database.Database): OutcomeLogEntry[] {
+  return db.prepare("SELECT * FROM outcome_log ORDER BY created_at DESC").all() as OutcomeLogEntry[];
 }
 
 export function saveOutreachDraft(db: Database.Database, jobId: number, draft: string): void {
@@ -968,6 +1241,26 @@ export function summarizeRun(params: {
   fetchSuccessRate: number;
   parseSuccessRate: number;
   jsFallbackRate: number;
+  actionableCount?: number;
+  applyNowCount?: number;
+  coldEmailCount?: number;
+  enrichFirstCount?: number;
+  watchCount?: number;
+  discardCount?: number;
+  directContactCompanies?: number;
+  founderSurfaceCompanies?: number;
+  averageOutreachLeverageScore?: number;
 }): RunSummary {
-  return params;
+  return {
+    ...params,
+    actionableCount: params.actionableCount ?? 0,
+    applyNowCount: params.applyNowCount ?? 0,
+    coldEmailCount: params.coldEmailCount ?? 0,
+    enrichFirstCount: params.enrichFirstCount ?? 0,
+    watchCount: params.watchCount ?? 0,
+    discardCount: params.discardCount ?? 0,
+    directContactCompanies: params.directContactCompanies ?? 0,
+    founderSurfaceCompanies: params.founderSurfaceCompanies ?? 0,
+    averageOutreachLeverageScore: params.averageOutreachLeverageScore ?? 0,
+  };
 }

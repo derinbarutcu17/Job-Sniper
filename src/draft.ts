@@ -19,6 +19,7 @@ export function draftOutreach(baseDir: string, jobId: number): string {
     "",
     `Current role scan'imde ${job.title} pozisyonunu gördüm ve profilimle güçlü bir eşleşme buldum.`,
     `Öne çıkan sinyaller: ${relevant.join(", ") || "product building, design, AI tooling"}.`,
+    `Pitch angle: ${job.pitch_angle || "I can contribute quickly where product judgment and execution speed need to meet."}`,
     `Kısa özet: ${job.match_rationale || "This role matches my current focus across design and AI-enabled product work."}`,
     "",
     "If useful, I can share a concise portfolio and discuss how I can help ship quickly.",

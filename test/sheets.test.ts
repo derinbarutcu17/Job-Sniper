@@ -158,11 +158,19 @@ describe("sheets sync", () => {
     expect(second.spreadsheetId).toBe("sheet-123");
     expect(gateway.headers.get("Jobs")).toContain("canonical_key");
     expect(gateway.headers.get("Jobs")).toContain("manual_status");
+    expect(gateway.headers.get("Jobs")).toContain("recommendation");
+    expect(gateway.headers.get("Jobs")).toContain("recommended_route");
+    expect(gateway.headers.get("Companies")).toContain("best_route");
     expect(gateway.headers.get("RunMetrics")).toContain("total_discovered");
+    expect(gateway.headers.get("RunMetrics")).toContain("actionable_count");
+    expect(gateway.sheets.has("Jobs 2026-03-11")).toBe(true);
+    expect(gateway.headers.get("Jobs 2026-03-11")).toContain("canonical_key");
     expect(after).toHaveLength(1);
     expect(after[0]?.owner_notes).toBe("call founder");
     if (previousSheetId) {
       process.env.SNIPER_GOOGLE_SHEET_ID = previousSheetId;
+    } else {
+      delete process.env.SNIPER_GOOGLE_SHEET_ID;
     }
   });
 

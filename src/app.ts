@@ -1,9 +1,14 @@
 import fs from "node:fs";
 import path from "node:path";
 import { loadConfig, saveConfig } from "./config.js";
+import { renderCompanyDossier } from "./company-dossier.js";
+import { logContactAttempt, logOutcome } from "./contact-log.js";
 import {
   enqueueDiscoveryCandidates,
+  getCompanyByRef,
+  getContactsForCompanyId,
   getJobById,
+  getJobsForCompany,
   listCompanies,
   listContacts,
   listTopJobs,
@@ -12,6 +17,7 @@ import {
   upsertContact,
 } from "./db.js";
 import { draftOutreach } from "./draft.js";
+import { summarizeExperiments } from "./experiments.js";
 import { createDefaultDependencies } from "./lib/http.js";
 import { canonicalCompanyKey, canonicalContactKey, domainFromUrl, normalizeUrl } from "./lib/url.js";
 import { onboardProfile } from "./profile.js";
@@ -186,7 +192,35 @@ export function createApp(baseDir: string, dependencies: AppDependencies = {}) {
       return jobs
         .map(
           (job, index) =>
-            `${index + 1}. [${String(job.id)}] ${String(job.title)} @ ${String(job.company_name)} | ${Math.round(Number(job.score ?? 0))} | ${String(job.location ?? "")}`,
+            `${index + 1}. [${String(job.id)}] ${String(job.title)} @ ${String(job.company_name)} | ${Math.round(Number(job.score ?? 0))} | ${String(job.recommendation ?? "watch")} | ${String(job.recommended_route ?? "no_action")} | ${String(job.location ?? "")}`,
+        )
+        .join("\n");
+    },
+
+    triage(limit = 10) {
+      const { db } = openDatabase(baseDir);
+      const jobs = db.prepare(`
+        SELECT *
+        FROM jobs
+        WHERE status != 'excluded'
+        ORDER BY
+          CASE recommendation
+            WHEN 'apply_now' THEN 1
+            WHEN 'cold_email' THEN 2
+            WHEN 'enrich_first' THEN 3
+            WHEN 'watch' THEN 4
+            ELSE 5
+          END ASC,
+          outreach_leverage_score DESC,
+          score DESC,
+          updated_at DESC
+        LIMIT ?
+      `).all(limit) as Array<Record<string, unknown>>;
+      if (!jobs.length) return "No triaged opportunities yet.";
+      return jobs
+        .map(
+          (job, index) =>
+            `${index + 1}. [${String(job.id)}] ${String(job.title)} @ ${String(job.company_name)} | ${String(job.recommendation)} | route ${String(job.recommended_route)} | leverage ${Math.round(Number(job.outreach_leverage_score ?? 0))}`,
         )
         .join("\n");
     },
@@ -210,11 +244,38 @@ export function createApp(baseDir: string, dependencies: AppDependencies = {}) {
       return [
         `[${job.id}] ${job.title} @ ${job.company_name}`,
         `Score: ${Math.round(job.score)} | ${job.category} | ${job.eligibility}`,
+        `Recommendation: ${job.recommendation || "watch"} | Route: ${job.recommended_route || "no_action"} (${Math.round(Number(job.route_confidence ?? 0) * 100)}%)`,
         `Title family: ${job.title_family || "Unknown"}`,
+        `Pitch: ${job.pitch_theme || "generalist"} | ${job.pitch_angle || "None"}`,
         `Positives: ${(explanation.positives ?? []).join("; ") || "None"}`,
         `Negatives: ${(explanation.negatives ?? []).join("; ") || "None"}`,
         `Gates passed: ${(explanation.gatesPassed ?? []).join(", ") || "None"}`,
         `Gates failed: ${(explanation.gatesFailed ?? []).join(", ") || "None"}`,
+      ].join("\n");
+    },
+
+    route(jobId: number) {
+      const { db } = openDatabase(baseDir);
+      const job = getJobById(db, jobId);
+      if (!job) throw new Error(`Job ${jobId} was not found.`);
+      return [
+        `[${job.id}] ${job.title} @ ${job.company_name}`,
+        `Recommended route: ${job.recommended_route || "no_action"}`,
+        `Confidence: ${Math.round(Number(job.route_confidence ?? 0) * 100)}%`,
+        `Rationale: ${job.route_rationale || "No route rationale stored."}`,
+      ].join("\n");
+    },
+
+    pitch(jobId: number) {
+      const { db } = openDatabase(baseDir);
+      const job = getJobById(db, jobId);
+      if (!job) throw new Error(`Job ${jobId} was not found.`);
+      return [
+        `[${job.id}] ${job.title} @ ${job.company_name}`,
+        `Theme: ${job.pitch_theme || "generalist"}`,
+        `Angle: ${job.pitch_angle || "No pitch angle stored."}`,
+        `Strongest profile signal: ${job.strongest_profile_signal || "Unknown"}`,
+        `Strongest company signal: ${job.strongest_company_signal || "Unknown"}`,
       ].join("\n");
     },
 
@@ -249,7 +310,7 @@ export function createApp(baseDir: string, dependencies: AppDependencies = {}) {
       return companies
         .map(
           (company, index) =>
-            `${index + 1}. ${String(company.name ?? "")} | startup ${Math.round(Number(company.startup_score ?? 0))} | fit ${Math.round(Number(company.company_fit_score ?? 0))} | ${String(company.location ?? "Unknown")} | ${String(company.careers_url ?? company.company_url ?? "")}`,
+            `${index + 1}. ${String(company.name ?? "")} | ${String(company.recommendation ?? "watch")} | route ${String(company.best_route ?? "watch_company")} | startup ${Math.round(Number(company.startup_score ?? 0))} | fit ${Math.round(Number(company.company_fit_score ?? 0))} | ${String(company.location ?? "Unknown")} | ${String(company.careers_url ?? company.company_url ?? "")}`,
         )
         .join("\n");
     },
@@ -284,6 +345,43 @@ export function createApp(baseDir: string, dependencies: AppDependencies = {}) {
 
     async enrichCompany(companyRef: string) {
       return enrichCompanyRecord(baseDir, deps, companyRef);
+    },
+
+    dossier(companyRef: string) {
+      const { db } = openDatabase(baseDir);
+      const company = getCompanyByRef(db, companyRef);
+      if (!company) throw new Error(`Company not found: ${companyRef}`);
+      const jobs = getJobsForCompany(db, Number(company.id));
+      const contacts = getContactsForCompanyId(db, Number(company.id));
+      return renderCompanyDossier(company, jobs, contacts);
+    },
+
+    contactLog(input: { companyRef: string; channel: "email" | "linkedin" | "ats" | "founder"; note?: string; jobId?: number }) {
+      const { db } = openDatabase(baseDir);
+      const entry = logContactAttempt(db, input.companyRef, input.channel, input.note ?? "", input.jobId);
+      return `Logged contact attempt for ${input.companyRef} via ${entry.channel}.`;
+    },
+
+    outcomeLog(input: { companyRef: string; result: "no_reply" | "reply" | "call" | "interview" | "rejected" | "positive_signal"; note?: string; jobId?: number }) {
+      const { db } = openDatabase(baseDir);
+      const entry = logOutcome(db, input.companyRef, input.result, input.note ?? "", input.jobId);
+      return `Logged outcome for ${input.companyRef}: ${entry.result}.`;
+    },
+
+    experiments() {
+      const { db } = openDatabase(baseDir);
+      const summary = summarizeExperiments(db);
+      const routeLines = Object.entries(summary.replyRateByRoute).map(
+        ([route, rate]) => `${route}: reply ${Math.round(rate * 100)}%, positive ${Math.round((summary.positiveOutcomeRateByRoute[route] ?? 0) * 100)}%`,
+      );
+      const themeLines = summary.topPitchThemes.map((theme) => `${theme.pitchTheme}: ${theme.count}`);
+      return [
+        "Route performance:",
+        routeLines.join("\n") || "No logged outcomes yet.",
+        "",
+        "Top pitch themes:",
+        themeLines.join("\n") || "No pitch data yet.",
+      ].join("\n");
     },
 
     requeue(url: string, lane?: SearchLane) {
@@ -339,6 +437,23 @@ export function createApp(baseDir: string, dependencies: AppDependencies = {}) {
         `Jobs: ${counts.jobs} total, ${counts.eligible_jobs} eligible`,
         `Companies: ${counts.companies}`,
         `Contacts: ${counts.contacts}`,
+        ...(() => {
+          const strategic = db.prepare(`
+            SELECT
+              SUM(CASE WHEN recommendation IN ('apply_now','cold_email','enrich_first') THEN 1 ELSE 0 END) AS actionable,
+              SUM(CASE WHEN recommendation = 'apply_now' THEN 1 ELSE 0 END) AS apply_now,
+              SUM(CASE WHEN recommendation = 'cold_email' THEN 1 ELSE 0 END) AS cold_email,
+              SUM(CASE WHEN recommendation = 'enrich_first' THEN 1 ELSE 0 END) AS enrich_first,
+              SUM(CASE WHEN recommendation = 'watch' THEN 1 ELSE 0 END) AS watch_count,
+              SUM(CASE WHEN recommendation = 'discard' THEN 1 ELSE 0 END) AS discard_count,
+              AVG(outreach_leverage_score) AS avg_leverage
+            FROM jobs
+          `).get() as Record<string, unknown>;
+          return [
+            `Strategic: ${String(strategic.actionable ?? 0)} actionable | apply ${String(strategic.apply_now ?? 0)} | cold email ${String(strategic.cold_email ?? 0)} | enrich ${String(strategic.enrich_first ?? 0)} | watch ${String(strategic.watch_count ?? 0)} | discard ${String(strategic.discard_count ?? 0)}`,
+            `Average outreach leverage: ${Math.round(Number(strategic.avg_leverage ?? 0))}`,
+          ];
+        })(),
         latestRun
           ? `Last run: discovered ${String(latestRun.total_discovered ?? 0)}, deduped ${String(latestRun.total_deduped ?? 0)}, parsed ${String(latestRun.total_parsed ?? 0)}`
           : "Last run: none",
@@ -352,6 +467,8 @@ export function createApp(baseDir: string, dependencies: AppDependencies = {}) {
         companies: db.prepare("SELECT * FROM companies ORDER BY startup_score DESC, updated_at DESC").all(),
         contacts: db.prepare("SELECT * FROM contacts ORDER BY updated_at DESC").all(),
         runMetrics: db.prepare("SELECT * FROM run_metrics ORDER BY id DESC LIMIT 25").all(),
+        contactLog: db.prepare("SELECT * FROM contact_log ORDER BY created_at DESC LIMIT 100").all(),
+        outcomeLog: db.prepare("SELECT * FROM outcome_log ORDER BY created_at DESC LIMIT 100").all(),
       };
       const resolvedPath = outputPath || path.join(baseDir, "data", "sniper-export.json");
       fs.writeFileSync(resolvedPath, `${JSON.stringify(payload, null, 2)}\n`);

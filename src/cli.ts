@@ -13,14 +13,21 @@ function help(): string {
     "  run [--lane <lane-id>] [--company-watch]",
     "  digest [limit]",
     "  shortlist [limit]",
+    "  triage [limit]",
     "  draft <job-id>",
     "  explain <job-id>",
+    "  route <job-id>",
+    "  pitch <job-id>",
     "  blacklist add [--company | --keyword] [--lane <lane>] <term>",
     "  sheet sync",
     "  sheet pull",
     "  companies [limit]",
+    "  dossier <company-id-or-key>",
     "  contacts [company-id-or-key]",
     "  enrich company <company-id-or-key>",
+    "  contact log <company-id-or-key> --channel <email|linkedin|ats|founder> [--job <job-id>] [--note <text>]",
+    "  outcome log <company-id-or-key> --result <no_reply|reply|call|interview|rejected|positive_signal> [--job <job-id>] [--note <text>]",
+    "  experiments",
     "  requeue <url> [lane]",
     "  sources test",
     "  stats",
@@ -72,6 +79,10 @@ export async function runCli(argv: string[], baseDir = getBaseDir()): Promise<st
     return app.shortlist(Number(rest[0] ?? 10));
   }
 
+  if (command === "triage") {
+    return app.triage(Number(rest[0] ?? 10));
+  }
+
   if (command === "draft") {
     const jobId = Number(rest[0]);
     if (!Number.isFinite(jobId)) {
@@ -86,6 +97,22 @@ export async function runCli(argv: string[], baseDir = getBaseDir()): Promise<st
       throw new Error("explain requires a numeric job ID.");
     }
     return app.explain(jobId);
+  }
+
+  if (command === "route") {
+    const jobId = Number(rest[0]);
+    if (!Number.isFinite(jobId)) {
+      throw new Error("route requires a numeric job ID.");
+    }
+    return app.route(jobId);
+  }
+
+  if (command === "pitch") {
+    const jobId = Number(rest[0]);
+    if (!Number.isFinite(jobId)) {
+      throw new Error("pitch requires a numeric job ID.");
+    }
+    return app.pitch(jobId);
   }
 
   if (command === "blacklist" && rest[0] === "add") {
@@ -124,6 +151,12 @@ export async function runCli(argv: string[], baseDir = getBaseDir()): Promise<st
     return app.companies(Number(rest[0] ?? 10));
   }
 
+  if (command === "dossier") {
+    const companyRef = rest.join(" ").trim();
+    if (!companyRef) throw new Error("dossier requires a company id or key.");
+    return app.dossier(companyRef);
+  }
+
   if (command === "contacts") {
     return app.contacts(rest[0]);
   }
@@ -134,6 +167,56 @@ export async function runCli(argv: string[], baseDir = getBaseDir()): Promise<st
       throw new Error("enrich company requires a company id or key.");
     }
     return app.enrichCompany(companyRef);
+  }
+
+  if (command === "contact" && rest[0] === "log") {
+    const companyRef = rest[1];
+    if (!companyRef) throw new Error("contact log requires a company id or key.");
+    let channel: "email" | "linkedin" | "ats" | "founder" | undefined;
+    let jobId: number | undefined;
+    let note = "";
+    for (let index = 2; index < rest.length; index += 1) {
+      const token = rest[index];
+      if (token === "--channel") {
+        channel = rest[index + 1] as typeof channel;
+        index += 1;
+      } else if (token === "--job") {
+        jobId = Number(rest[index + 1]);
+        index += 1;
+      } else if (token === "--note") {
+        note = rest.slice(index + 1).join(" ");
+        break;
+      }
+    }
+    if (!channel) throw new Error("contact log requires --channel.");
+    return app.contactLog({ companyRef, channel, jobId, note });
+  }
+
+  if (command === "outcome" && rest[0] === "log") {
+    const companyRef = rest[1];
+    if (!companyRef) throw new Error("outcome log requires a company id or key.");
+    let result: "no_reply" | "reply" | "call" | "interview" | "rejected" | "positive_signal" | undefined;
+    let jobId: number | undefined;
+    let note = "";
+    for (let index = 2; index < rest.length; index += 1) {
+      const token = rest[index];
+      if (token === "--result") {
+        result = rest[index + 1] as typeof result;
+        index += 1;
+      } else if (token === "--job") {
+        jobId = Number(rest[index + 1]);
+        index += 1;
+      } else if (token === "--note") {
+        note = rest.slice(index + 1).join(" ");
+        break;
+      }
+    }
+    if (!result) throw new Error("outcome log requires --result.");
+    return app.outcomeLog({ companyRef, result, jobId, note });
+  }
+
+  if (command === "experiments") {
+    return app.experiments();
   }
 
   if (command === "requeue") {

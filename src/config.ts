@@ -51,6 +51,7 @@ export const defaultConfig: SniperConfig = {
       companies: "Companies",
       contacts: "Contacts",
       runMetrics: "RunMetrics",
+      dailyJobsPrefix: "Jobs ",
     },
   },
 };

@@ -22,6 +22,14 @@ const JOB_HEADERS = [
   "score",
   "eligibility",
   "category",
+  "recommendation",
+  "recommended_route",
+  "route_confidence",
+  "pitch_theme",
+  "pitch_angle",
+  "outreach_leverage_score",
+  "interview_probability_band",
+  "opportunity_cost_band",
   "startup_fit_score",
   "contactability_score",
   "location",
@@ -44,6 +52,14 @@ const COMPANY_HEADERS = [
   "startup_score",
   "company_fit_score",
   "hiring_signal_score",
+  "recommendation",
+  "best_route",
+  "pitch_theme",
+  "pitch_angle",
+  "open_role_count",
+  "direct_contact_count",
+  "reachable_now",
+  "priority_band",
   "location",
   "careers_url",
   "linkedin_url",
@@ -76,6 +92,15 @@ const RUN_METRIC_HEADERS = [
   "jobs_eligible",
   "companies_discovered",
   "contacts_discovered",
+  "actionable_count",
+  "apply_now_count",
+  "cold_email_count",
+  "enrich_first_count",
+  "watch_count",
+  "discard_count",
+  "direct_contact_companies",
+  "founder_surface_companies",
+  "average_outreach_leverage_score",
   "source_breakdown",
 ] as const;
 
@@ -98,6 +123,7 @@ function resolveSheetSettings(baseDir: string) {
       companies: config.sheets.tabs.companies || process.env.SNIPER_COMPANIES_TAB || "Companies",
       contacts: config.sheets.tabs.contacts || process.env.SNIPER_CONTACTS_TAB || "Contacts",
       runMetrics: config.sheets.tabs.runMetrics || process.env.SNIPER_RUN_METRICS_TAB || "RunMetrics",
+      dailyJobsPrefix: config.sheets.tabs.dailyJobsPrefix || process.env.SNIPER_DAILY_JOBS_PREFIX || "Jobs ",
     },
   };
 }
@@ -228,6 +254,14 @@ function jobRows(db: ReturnType<typeof openDatabase>["db"]): Row[] {
     score: String(job.score),
     eligibility: job.eligibility,
     category: job.category,
+    recommendation: job.recommendation || "watch",
+    recommended_route: job.recommended_route || "no_action",
+    route_confidence: String(job.route_confidence ?? 0),
+    pitch_theme: job.pitch_theme || "",
+    pitch_angle: job.pitch_angle || "",
+    outreach_leverage_score: String(job.outreach_leverage_score ?? 0),
+    interview_probability_band: job.interview_probability_band || "low",
+    opportunity_cost_band: job.opportunity_cost_band || "medium",
     startup_fit_score: String(job.startup_fit_score),
     contactability_score: String(job.contactability_score),
     location: job.location,
@@ -256,6 +290,14 @@ function companyRows(db: ReturnType<typeof openDatabase>["db"]): Row[] {
     startup_score: String(company.startup_score ?? 0),
     company_fit_score: String(company.company_fit_score ?? 0),
     hiring_signal_score: String(company.hiring_signal_score ?? 0),
+    recommendation: String(company.recommendation ?? "watch"),
+    best_route: String(company.best_route ?? "watch_company"),
+    pitch_theme: String(company.pitch_theme ?? ""),
+    pitch_angle: String(company.pitch_angle ?? ""),
+    open_role_count: String(company.open_role_count ?? 0),
+    direct_contact_count: String(company.direct_contact_count ?? 0),
+    reachable_now: String(company.reachable_now ?? 0),
+    priority_band: String(company.priority_band ?? "low"),
     location: String(company.location ?? ""),
     careers_url: String(company.careers_url ?? ""),
     linkedin_url: String(company.linkedin_url ?? ""),
@@ -319,6 +361,15 @@ function runMetricRows(db: ReturnType<typeof openDatabase>["db"]): Row[] {
     jobs_eligible: String(row.jobs_eligible ?? 0),
     companies_discovered: String(row.companies_discovered ?? 0),
     contacts_discovered: String(row.contacts_discovered ?? 0),
+    actionable_count: String(row.actionable_count ?? 0),
+    apply_now_count: String(row.apply_now_count ?? 0),
+    cold_email_count: String(row.cold_email_count ?? 0),
+    enrich_first_count: String(row.enrich_first_count ?? 0),
+    watch_count: String(row.watch_count ?? 0),
+    discard_count: String(row.discard_count ?? 0),
+    direct_contact_companies: String(row.direct_contact_companies ?? 0),
+    founder_surface_companies: String(row.founder_surface_companies ?? 0),
+    average_outreach_leverage_score: String(row.average_outreach_leverage_score ?? 0),
     source_breakdown: String(row.source_breakdown_json ?? "{}"),
   }));
 }
@@ -334,6 +385,65 @@ function mergeManualColumns(localRows: Row[], existingRows: Row[]): Row[] {
     }
     return merged;
   });
+}
+
+function dayKey(value: string): string {
+  const match = value.match(/^\d{4}-\d{2}-\d{2}/);
+  return match ? match[0] : "unknown-date";
+}
+
+function dailyJobTabs(
+  db: ReturnType<typeof openDatabase>["db"],
+  prefix = "Jobs ",
+): Array<{ title: string; rows: Row[] }> {
+  const jobs = db
+    .prepare("SELECT * FROM jobs WHERE status != 'excluded' ORDER BY created_at DESC, updated_at DESC")
+    .all() as JobRecord[];
+
+  const groups = new Map<string, JobRecord[]>();
+  for (const job of jobs) {
+    const key = dayKey(job.posted_at || job.created_at || job.updated_at || "");
+    const rows = groups.get(key) ?? [];
+    rows.push(job);
+    groups.set(key, rows);
+  }
+
+  return Array.from(groups.entries())
+    .sort(([left], [right]) => right.localeCompare(left))
+    .map(([date, rows]) => ({
+      title: `${prefix}${date}`.slice(0, 100),
+      rows: rows.map((job) => ({
+        canonical_key: job.canonical_key,
+        title: job.title,
+        title_family: job.title_family,
+        company_name: job.company_name,
+        lane: job.lane,
+        score: String(job.score),
+        eligibility: job.eligibility,
+        category: job.category,
+        recommendation: job.recommendation || "watch",
+        recommended_route: job.recommended_route || "no_action",
+        route_confidence: String(job.route_confidence ?? 0),
+        pitch_theme: job.pitch_theme || "",
+        pitch_angle: job.pitch_angle || "",
+        outreach_leverage_score: String(job.outreach_leverage_score ?? 0),
+        interview_probability_band: job.interview_probability_band || "low",
+        opportunity_cost_band: job.opportunity_cost_band || "medium",
+        startup_fit_score: String(job.startup_fit_score),
+        contactability_score: String(job.contactability_score),
+        location: job.location,
+        work_model: job.work_model,
+        posted_at: job.posted_at,
+        url: job.url,
+        best_contact: bestContact(job),
+        explanation_short: shortExplanation(job),
+        manual_status: job.manual_status || "",
+        priority: job.priority || "",
+        outreach_state: job.outreach_state || "",
+        owner_notes: job.owner_notes || "",
+        manual_contact_override: job.manual_contact_override || "",
+      })),
+    }));
 }
 
 export async function syncSheets(baseDir: string, gateway: SheetGateway = new GoogleSheetGateway()) {
@@ -359,6 +469,11 @@ export async function syncSheets(baseDir: string, gateway: SheetGateway = new Go
   await gateway.writeSheet(spreadsheetId, settings.tabs.companies, companyRows(db), [...COMPANY_HEADERS]);
   await gateway.writeSheet(spreadsheetId, settings.tabs.contacts, contactRows(db), [...CONTACT_HEADERS]);
   await gateway.writeSheet(spreadsheetId, settings.tabs.runMetrics, runMetricRows(db), [...RUN_METRIC_HEADERS]);
+
+  for (const tab of dailyJobTabs(db, settings.tabs.dailyJobsPrefix ?? "Jobs ")) {
+    await gateway.ensureSheet(spreadsheetId, tab.title);
+    await gateway.writeSheet(spreadsheetId, tab.title, tab.rows, [...JOB_HEADERS]);
+  }
 
   saveSpreadsheetState(db, spreadsheetId, { lastSyncAt: new Date().toISOString() });
   return {

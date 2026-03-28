@@ -6,7 +6,9 @@
 
 `claw-job-sniper` is a local-first OpenClaw skill for finding jobs, tracking companies, collecting public hiring contacts, and running a structured outreach workflow.
 
-It keeps a SQLite database as the source of truth, searches the public web plus common ATS surfaces, ranks opportunities against your profile, and syncs the output into Google Sheets.
+V2 keeps the existing discovery engine, but adds a second layer on top: deterministic decision support for what to do next, which route to use, and what angle to lead with.
+
+It keeps a SQLite database as the source of truth, searches the public web plus common ATS surfaces, ranks opportunities against your profile, recommends the next action, and syncs the output into Google Sheets.
 
 ## Talk to It
 
@@ -25,7 +27,10 @@ You act as the director. The agent figures out which commands to run and handles
 
 - Local-first storage with SQLite
 - Profile-aware job ranking instead of raw keyword matching
+- Strategic recommendation layer on top of raw score
+- Route intelligence and pitch-angle generation
 - Company and public contact discovery
+- Company dossier and outcome-learning workflow
 - Google Sheets sync with manual columns preserved
 - OpenClaw-friendly command surface for scouting, reviewing, and drafting
 
@@ -38,6 +43,14 @@ That means:
 - lanes are data-driven, not hardcoded enums
 - the shipped presets are just built-in packs, not special-case code paths
 - you can define new lanes for other fields in `config.json` without editing the scoring engine, query builder, or CLI
+
+V2 also adds a deterministic-first judgment layer:
+
+- recommendation: `apply_now`, `cold_email`, `enrich_first`, `watch`, `discard`
+- route intelligence: `ats_only`, `ats_plus_cold_email`, `direct_email_first`, `founder_or_team_reachout`, `watch_company`, `no_action`
+- pitch angle generation with visible evidence
+- company dossier mode
+- outcome logging and route/theme feedback loops
 
 ## What it does
 
@@ -52,7 +65,12 @@ That means:
   - companies
   - public contacts
   - manual notes and outreach state
+- Recommends:
+  - what to do next
+  - which route to use
+  - what pitch angle to use
 - Drafts outreach text for specific jobs
+- Tracks outreach and outcome logs to learn which routes are working
 - Syncs to Google Sheets and pulls manual edits back into local state
 
 ## Quick start
@@ -91,11 +109,18 @@ OpenClaw should expose this as `/sniper`.
 /sniper run [--lane <lane-id>] [--company-watch]
 /sniper digest [limit]
 /sniper shortlist [limit]
+/sniper triage [limit]
 /sniper draft <job-id>
 /sniper explain <job-id>
+/sniper route <job-id>
+/sniper pitch <job-id>
 /sniper companies [limit]
+/sniper dossier <company-id-or-key>
 /sniper contacts [company-id-or-key]
 /sniper enrich company <company-id-or-key>
+/sniper contact log <company-id-or-key> --channel <email|linkedin|ats|founder> [--job <job-id>] [--note <text>]
+/sniper outcome log <company-id-or-key> --result <no_reply|reply|call|interview|rejected|positive_signal> [--job <job-id>] [--note <text>]
+/sniper experiments
 /sniper blacklist add [--company | --keyword] [--lane <lane>] <term>
 /sniper sheet sync
 /sniper sheet pull
@@ -219,23 +244,47 @@ This will:
 ```text
 /sniper digest
 /sniper shortlist
+/sniper triage
 /sniper companies
 ```
+
+Use `digest` for a score-first view.
+
+Use `triage` for an action-first view. That is the V2 shortlist that answers "what deserves energy now?"
 
 ### 4. Enrich promising companies
 
 ```text
 /sniper enrich company <company-id-or-key>
 /sniper contacts <company-id-or-key>
+/sniper dossier <company-id-or-key>
 ```
+
+`companies` is a lightweight list view.
+
+`dossier` is the company strategy brief: why it matters, best route, best angle, contacts found, open roles, and whether to act now or watch.
 
 ### 5. Draft outreach
 
 ```text
 /sniper draft 42
+/sniper route 42
+/sniper pitch 42
 ```
 
-### 6. Sync to Google Sheets
+V2 stays deterministic-first and inspectable. It does not auto-send emails, auto-apply, or hide decisions behind a black box.
+
+### 6. Log outcomes
+
+```text
+/sniper contact log north --channel email --job 42 --note intro sent
+/sniper outcome log north --result reply --job 42 --note recruiter replied
+/sniper experiments
+```
+
+Those logs feed the route/theme feedback loop so the tool can surface what is actually producing replies and positive signals.
+
+### 7. Sync to Google Sheets
 
 ```text
 /sniper sheet sync
@@ -255,6 +304,14 @@ Optional:
 - `SNIPER_GOOGLE_FOLDER_ID`
 
 If no sheet ID is configured, first sync creates a spreadsheet named `Claw Job Sniper`.
+
+V2 adds new strategy columns to the `Jobs`, `Companies`, and `RunMetrics` tabs while preserving the existing manual-edit workflow.
+
+Examples:
+
+- `Jobs`: recommendation, recommended route, pitch theme, pitch angle, outreach leverage, interview probability band, opportunity cost band
+- `Companies`: recommendation, best route, pitch theme, direct contact count, reachable now, priority band
+- `RunMetrics`: actionable count, route mix, direct-contact company count, average outreach leverage
 
 Default tabs:
 

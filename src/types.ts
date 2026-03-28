@@ -19,6 +19,19 @@ export type ConfidenceBand = "very_low" | "low" | "medium" | "high";
 export type SeniorityTarget = "intern" | "junior" | "mid" | "senior";
 export type PageIntent = "job" | "company" | "contact" | "unknown";
 export type PageType = "job_detail" | "career_hub" | "team_page" | "contact_page" | "about_page" | "generic";
+export type OpportunityRecommendation = "apply_now" | "cold_email" | "enrich_first" | "watch" | "discard";
+export type RecommendedRoute =
+  | "ats_only"
+  | "ats_plus_cold_email"
+  | "direct_email_first"
+  | "founder_or_team_reachout"
+  | "watch_company"
+  | "no_action";
+export type PitchTheme = "design" | "ai_workflows" | "design_engineering" | "startup_speed" | "systems_thinking" | "generalist";
+export type ProbabilityBand = "low" | "medium" | "high";
+export type PriorityBand = "low" | "medium" | "high";
+export type ContactChannel = "email" | "linkedin" | "ats" | "founder";
+export type OutcomeResult = "no_reply" | "reply" | "call" | "interview" | "rejected" | "positive_signal";
 
 export interface RolePackTitleFamily {
   family: string;
@@ -90,6 +103,7 @@ export interface SniperConfig {
       companies: string;
       contacts: string;
       runMetrics: string;
+      dailyJobsPrefix?: string;
     };
   };
 }
@@ -233,6 +247,15 @@ export interface CompanyRecordInput {
   hiringSignalScore: number;
   contactabilityScore: number;
   isStartupCandidate: boolean;
+  recommendation?: OpportunityRecommendation;
+  recommendationReason?: string;
+  bestRoute?: RecommendedRoute;
+  pitchTheme?: PitchTheme;
+  pitchAngle?: string;
+  pitchEvidence?: string[];
+  directContactCount?: number;
+  reachableNow?: boolean;
+  priorityBand?: PriorityBand;
   lastSeenAt: string;
 }
 
@@ -271,6 +294,43 @@ export interface ScoreBreakdown {
   negatives: string[];
   gatesPassed: string[];
   gatesFailed: string[];
+}
+
+export interface DecisionExplanation {
+  why_apply_now: string[];
+  why_cold_email: string[];
+  why_enrich_first: string[];
+  why_watch: string[];
+  why_discard: string[];
+}
+
+export interface JobDecisionSnapshot {
+  recommendation: OpportunityRecommendation;
+  recommendationReason: string;
+  explanation: DecisionExplanation;
+  recommendedRoute: RecommendedRoute;
+  routeConfidence: number;
+  routeRationale: string;
+  pitchTheme: PitchTheme;
+  pitchAngle: string;
+  pitchEvidence: string[];
+  strongestProfileSignal: string;
+  strongestCompanySignal: string;
+  outreachLeverageScore: number;
+  interviewProbabilityBand: ProbabilityBand;
+  opportunityCostBand: ProbabilityBand;
+}
+
+export interface CompanyDecisionSnapshot {
+  recommendation: OpportunityRecommendation;
+  bestRoute: RecommendedRoute;
+  pitchTheme: PitchTheme;
+  pitchAngle: string;
+  pitchEvidence: string[];
+  directContactCount: number;
+  reachableNow: boolean;
+  priorityBand: PriorityBand;
+  recommendationReason: string;
 }
 
 export interface JobRecord {
@@ -324,6 +384,20 @@ export interface JobRecord {
   priority: string;
   outreach_state: string;
   manual_contact_override: string;
+  recommendation: OpportunityRecommendation;
+  recommendation_reason: string;
+  decision_explanation_json: string;
+  recommended_route: RecommendedRoute;
+  route_confidence: number;
+  route_rationale: string;
+  pitch_theme: PitchTheme;
+  pitch_angle: string;
+  pitch_evidence: string;
+  strongest_profile_signal: string;
+  strongest_company_signal: string;
+  outreach_leverage_score: number;
+  interview_probability_band: ProbabilityBand;
+  opportunity_cost_band: ProbabilityBand;
 }
 
 export interface RunSummary {
@@ -338,6 +412,33 @@ export interface RunSummary {
   fetchSuccessRate: number;
   parseSuccessRate: number;
   jsFallbackRate: number;
+  actionableCount?: number;
+  applyNowCount?: number;
+  coldEmailCount?: number;
+  enrichFirstCount?: number;
+  watchCount?: number;
+  discardCount?: number;
+  directContactCompanies?: number;
+  founderSurfaceCompanies?: number;
+  averageOutreachLeverageScore?: number;
+}
+
+export interface ContactLogEntry {
+  id: number;
+  company_id: number;
+  job_id: number | null;
+  channel: ContactChannel;
+  note: string;
+  created_at: string;
+}
+
+export interface OutcomeLogEntry {
+  id: number;
+  company_id: number;
+  job_id: number | null;
+  result: OutcomeResult;
+  note: string;
+  created_at: string;
 }
 
 export interface HttpResponseLike {

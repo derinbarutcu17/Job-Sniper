@@ -49,10 +49,18 @@ describe("legacy migration", () => {
     const { db } = openDatabase(baseDir);
     const job = db.prepare("SELECT * FROM jobs").get() as { title: string; company_name: string; score: number };
     const company = db.prepare("SELECT * FROM companies").get() as { name: string };
+    const jobColumns = db.prepare("PRAGMA table_info(jobs)").all() as Array<{ name: string }>;
+    const companyColumns = db.prepare("PRAGMA table_info(companies)").all() as Array<{ name: string }>;
+    const contactLogTable = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'contact_log'").get() as { name: string } | undefined;
+    const outcomeLogTable = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'outcome_log'").get() as { name: string } | undefined;
 
     expect(job.title).toBe("Product Designer");
     expect(job.company_name).toBe("ModaAI");
     expect(job.score).toBe(88);
     expect(company.name).toBe("ModaAI");
+    expect(jobColumns.some((column) => column.name === "recommendation")).toBe(true);
+    expect(companyColumns.some((column) => column.name === "best_route")).toBe(true);
+    expect(contactLogTable?.name).toBe("contact_log");
+    expect(outcomeLogTable?.name).toBe("outcome_log");
   });
 });

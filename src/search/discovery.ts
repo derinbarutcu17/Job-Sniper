@@ -13,6 +13,7 @@ import {
 import { mapLimit, withRetries, withTimeout } from "../lib/async.js";
 import { createDefaultDependencies } from "../lib/http.js";
 import { canonicalCompanyKey, canonicalContactKey, domainFromUrl, normalizeUrl } from "../lib/url.js";
+import { buildDecisionSnapshot } from "../decision.js";
 import { loadProfile } from "../profile.js";
 import { getDefaultCompanyWatchLane, isCompanyWatchLane } from "../role-packs.js";
 import { normalizeTitleFamily, scoreListing } from "../scoring.js";
@@ -165,6 +166,17 @@ export async function runDiscovery(
   let fetchAttempts = 0;
   let fetchSuccesses = 0;
   let jsFallbacks = 0;
+  let actionableCount = 0;
+  let applyNowCount = 0;
+  let coldEmailCount = 0;
+  let enrichFirstCount = 0;
+  let watchCount = 0;
+  let discardCount = 0;
+  let directContactCompanies = 0;
+  let founderSurfaceCompanies = 0;
+  let totalOutreachLeverageScore = 0;
+  const directContactCompanyKeys = new Set<string>();
+  const founderSurfaceCompanyKeys = new Set<string>();
 
   const processListing = (listing: (typeof directListings)[number]) => {
     if (isCompanyWatchLane(config, listing.lane) && !listing.isRealJobPage) {
@@ -205,6 +217,7 @@ export async function runDiscovery(
     }
 
     const scored = scoreListing(config, profile, { ...listing, titleFamily: normalizeTitleFamily(config, listing.lane, listing.title) });
+    const decision = buildDecisionSnapshot(listing, profile, scored.score, scored.breakdown, scored.eligibility);
     const result = upsertJob(
       db,
       config,
@@ -216,12 +229,23 @@ export async function runDiscovery(
       profile,
       scored.breakdown,
       scored.eligibility,
+      decision,
     );
     totalNew += Number(result.inserted);
     totalUpdated += Number(result.updated);
     excluded += Number(result.excluded);
     companiesTouched += Number(result.companyTouched);
     contactsTouched += result.contactsTouched;
+    totalOutreachLeverageScore += decision.outreachLeverageScore;
+    if (decision.recommendation === "apply_now") applyNowCount += 1;
+    else if (decision.recommendation === "cold_email") coldEmailCount += 1;
+    else if (decision.recommendation === "enrich_first") enrichFirstCount += 1;
+    else if (decision.recommendation === "watch") watchCount += 1;
+    else if (decision.recommendation === "discard") discardCount += 1;
+    if (decision.recommendation !== "discard" && decision.recommendation !== "watch") actionableCount += 1;
+    const companyKey = canonicalCompanyKey(listing.company, domainFromUrl(listing.companyUrl || listing.url));
+    if (listing.publicContacts.some((contact) => contact.email)) directContactCompanyKeys.add(companyKey);
+    if (listing.teamUrl || listing.aboutUrl || listing.contactUrl) founderSurfaceCompanyKeys.add(companyKey);
   };
 
   for (const listing of directListings) {
@@ -390,6 +414,18 @@ export async function runDiscovery(
     fetchSuccessRate: fetchAttempts ? fetchSuccesses / fetchAttempts : 0,
     parseSuccessRate: fetchAttempts ? parsed / fetchAttempts : 0,
     jsFallbackRate: fetchAttempts ? jsFallbacks / fetchAttempts : 0,
+    actionableCount,
+    applyNowCount,
+    coldEmailCount,
+    enrichFirstCount,
+    watchCount,
+    discardCount,
+    directContactCompanies: directContactCompanyKeys.size,
+    founderSurfaceCompanies: founderSurfaceCompanyKeys.size,
+    averageOutreachLeverageScore:
+      applyNowCount + coldEmailCount + enrichFirstCount + watchCount + discardCount
+        ? totalOutreachLeverageScore / (applyNowCount + coldEmailCount + enrichFirstCount + watchCount + discardCount)
+        : 0,
   });
 
   recordRunMetrics(db, summary, sourceBreakdown);

@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { openDatabase } from "../src/db.js";
 import { runCli } from "../src/cli.js";
 import { makeTempDir } from "./helpers.js";
 
@@ -28,5 +29,30 @@ describe("cli", () => {
   it("rejects invalid draft ids", async () => {
     const baseDir = makeTempDir();
     await expect(runCli(["draft", "nope"], baseDir)).rejects.toThrow("draft requires a numeric job ID");
+  });
+
+  it("supports v2 triage and experiments flows", async () => {
+    const baseDir = makeTempDir();
+    const { db } = openDatabase(baseDir);
+    db.exec(`
+      INSERT INTO companies (
+        canonical_key, name, created_at, updated_at
+      ) VALUES (
+        'company:north', 'North', datetime('now'), datetime('now')
+      );
+      INSERT INTO jobs (
+        canonical_key, company_id, company_name, title, recommendation, recommended_route, route_confidence, pitch_theme, pitch_angle, created_at, updated_at
+      ) VALUES (
+        'job:north-1', 1, 'North', 'Design Engineer', 'cold_email', 'direct_email_first', 0.8, 'design_engineering', 'Lead with hybrid design and code.', datetime('now'), datetime('now')
+      );
+    `);
+
+    expect(await runCli(["triage"], baseDir)).toContain("cold_email");
+    expect(await runCli(["route", "1"], baseDir)).toContain("Recommended route");
+    expect(await runCli(["pitch", "1"], baseDir)).toContain("Theme:");
+    expect(await runCli(["dossier", "company:north"], baseDir)).toContain("Best route:");
+    expect(await runCli(["contact", "log", "company:north", "--channel", "email"], baseDir)).toContain("Logged contact attempt");
+    expect(await runCli(["outcome", "log", "company:north", "--result", "reply"], baseDir)).toContain("Logged outcome");
+    expect(await runCli(["experiments"], baseDir)).toContain("Route performance:");
   });
 });
