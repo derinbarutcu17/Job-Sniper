@@ -1,9 +1,5 @@
 # Job Sniper
 
-<p align="center">
-  <img src="assets/job-sniper-mascot.png" alt="Job Sniper mascot" width="960" />
-</p>
-
 `job-sniper` is a local-first OpenClaw skill for finding jobs, tracking companies, collecting public hiring contacts, and running a structured outreach workflow.
 
 V2 keeps the existing discovery engine, but adds a second layer on top: deterministic decision support for what to do next, which route to use, and what angle to lead with.
