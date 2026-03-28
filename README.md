@@ -1,85 +1,101 @@
 # Job Sniper
 
-`job-sniper` is a local-first OpenClaw skill for finding jobs, tracking companies, collecting public hiring contacts, and running a structured outreach workflow.
+<p align="center">
+  <img src="assets/job-sniper-mascot.png" alt="Job Sniper mascot" width="960" />
+</p>
 
-V2 keeps the existing discovery engine, but adds a second layer on top: deterministic decision support for what to do next, which route to use, and what angle to lead with.
+`job-sniper` is a local-first job intelligence engine for finding roles, tracking companies, collecting public hiring contacts, and managing a structured outreach workflow.
 
-The current foundation is also split into a local engine boundary:
+It is designed to do more than scrape jobs. It helps you decide:
+
+- which roles are actually worth time
+- which companies deserve direct outreach
+- which route to use: ATS, direct email, founder/team reachout, or watch
+- what pitch angle to lead with
+- what to sync into Google Sheets for day-to-day management
+
+The project stays deterministic-first and inspectable:
+
+- SQLite is the local source of truth
+- discovery, scoring, route, and pitch logic are explicit
+- Google Sheets is an integration layer, not the primary database
+- no auto-emailing
+- no auto-applying
+- no black-box “copilot” behavior
+
+## What It Is
+
+Job Sniper is now structured as a local backend core with a clean boundary for a future web app.
+
+Current foundation:
+
 - typed service layer
-- typed read models and dossier views
+- typed read models for jobs, companies, contacts, runs, and dossiers
 - first-class run records
+- role-pack-driven search and scoring
 - adapter-style Google Sheets sync
-- CLI as a presentation shell over the engine, not the engine itself
+- CLI and OpenClaw skill as presentation layers over the engine
 
-It keeps a SQLite database as the source of truth, searches the public web plus common ATS surfaces, ranks opportunities against your profile, recommends the next action, and syncs the output into Google Sheets.
+That means the repo is no longer “just a CLI tool.” It is a local domain engine that can later power:
+
+- a browser dashboard
+- a local API
+- background automation
+- Google Sheets workflows
+
+without needing to untangle the core logic again.
+
+## What It Does
+
+- Onboards a profile from raw text or a local file path
+- Searches across web search results, RSS feeds, ATS boards, and structured job pages
+- Tracks jobs, companies, contacts, manual notes, outreach state, and outcomes
+- Scores opportunities against a profile
+- Adds a strategic decision layer on top of raw score
+- Recommends next action:
+  - `apply_now`
+  - `cold_email`
+  - `enrich_first`
+  - `watch`
+  - `discard`
+- Recommends route:
+  - `ats_only`
+  - `ats_plus_cold_email`
+  - `direct_email_first`
+  - `founder_or_team_reachout`
+  - `watch_company`
+  - `no_action`
+- Generates deterministic pitch angles with visible evidence
+- Builds company dossiers
+- Logs outreach attempts and outcomes
+- Syncs live state into Google Sheets and pulls manual edits back
 
 ## Talk to It
 
-You do not need to memorize a CLI manual to use this. Because it is an OpenClaw skill, you can just talk to your agent naturally.
+If you are using OpenClaw, you do not need to think in CLI terms most of the time.
 
-Tell OpenClaw what you want:
+You can say things like:
 
-- "Find me senior frontend roles in London."
-- "Look at the companies we found yesterday and pull the public contacts for the top three."
-- "Draft a cover letter for the Stripe job."
-- "Sync our current shortlist to Google Sheets."
+- “Find me Berlin design-engineering roles.”
+- “Show me which companies are worth cold-emailing first.”
+- “Open the top opportunities and draft outreach for the best three.”
+- “Sync the latest shortlist to Google Sheets.”
 
-You act as the director. The agent figures out which commands to run and handles the heavy lifting behind the scenes.
+The skill command is:
 
-## At a glance
+```text
+/sniper
+```
 
-- Local-first storage with SQLite
-- Profile-aware job ranking instead of raw keyword matching
-- Strategic recommendation layer on top of raw score
-- Route intelligence and pitch-angle generation
-- Company and public contact discovery
-- Company dossier and outcome-learning workflow
-- Google Sheets sync with manual columns preserved
-- OpenClaw-friendly command surface for scouting, reviewing, and drafting
-- Web-app-ready internal contracts without introducing a server yet
+If your OpenClaw surface only exposes skill-wrapper commands, use:
 
-## What it is
+```text
+/skill sniper run
+```
 
-This repo runs as a role-pack-driven engine.
+## Quick Start
 
-That means:
-
-- lanes are data-driven, not hardcoded enums
-- the shipped presets are just built-in packs, not special-case code paths
-- you can define new lanes for other fields in `config.json` without editing the scoring engine, query builder, or CLI
-
-V2 also adds a deterministic-first judgment layer:
-
-- recommendation: `apply_now`, `cold_email`, `enrich_first`, `watch`, `discard`
-- route intelligence: `ats_only`, `ats_plus_cold_email`, `direct_email_first`, `founder_or_team_reachout`, `watch_company`, `no_action`
-- pitch angle generation with visible evidence
-- company dossier mode
-- outcome logging and route/theme feedback loops
-
-## What it does
-
-- Onboards a profile from raw text or a local file path
-- Searches across:
-  - web search results
-  - RSS feeds
-  - ATS/job platforms
-  - structured job pages via JSON-LD
-- Tracks:
-  - jobs
-  - companies
-  - public contacts
-  - manual notes and outreach state
-- Recommends:
-  - what to do next
-  - which route to use
-  - what pitch angle to use
-- Drafts outreach text for specific jobs
-- Tracks outreach and outcome logs to learn which routes are working
-- Syncs to Google Sheets and pulls manual edits back into local state
-
-## Quick start
-
-Install and smoke test:
+Install and verify:
 
 ```bash
 npm install
@@ -93,23 +109,21 @@ Basic flow:
 ```text
 /sniper onboard <cv text or file path>
 /sniper run
-/sniper digest
+/sniper triage
 /sniper companies
 /sniper sheet sync
 ```
 
-If your OpenClaw surface does not expose native skill commands, use:
+If you want the raw shell entrypoint:
 
-```text
-/skill sniper run
+```bash
+node ./scripts/run-sniper.mjs <subcommand>
 ```
 
-## Command surface
-
-OpenClaw should expose this as `/sniper`.
+## Command Surface
 
 ```text
-/sniper onboard <cv text or file path>
+/sniper onboard <text-or-file>
 /sniper run [--lane <lane-id>] [--company-watch]
 /sniper digest [limit]
 /sniper shortlist [limit]
@@ -132,22 +146,89 @@ OpenClaw should expose this as `/sniper`.
 /sniper export json [path]
 ```
 
-## Role packs and customization
+## Typical Workflow
 
-This tool is not tied to one person, one city, or one hiring market.
+### 1. Onboard a profile
 
-Main customization points:
+Paste text directly:
 
-- `config.json`
-  Set target cities, countries, remote preferences, RSS feeds, ATS boards, blacklists, sheet tabs, and your lane definitions.
-- `profile/cv.md` and `profile/profile.json`
-  Local runtime profile files created and updated through onboarding.
-- Role packs
-  Add, remove, or tune lanes for any field.
-- Sheet workflow
-  Adapt the `Jobs`, `Companies`, and `Contacts` tabs to your own research and outreach process.
+```text
+/sniper onboard I am a frontend engineer focused on devtools, based in London, open to hybrid and remote roles...
+```
 
-Each lane is a role pack with:
+Or use a local file:
+
+```text
+/sniper onboard /absolute/path/to/cv.pdf
+```
+
+### 2. Run discovery
+
+```text
+/sniper run
+/sniper run --lane design_jobs
+/sniper run --lane policy_jobs
+/sniper run --company-watch
+```
+
+This updates the local database with discovered jobs, companies, contacts, and strategic recommendations.
+
+### 3. Review what deserves time
+
+```text
+/sniper digest
+/sniper shortlist
+/sniper triage
+/sniper companies
+```
+
+Use:
+
+- `digest` for a score-first list
+- `shortlist` for eligible roles
+- `triage` for action-first prioritization
+- `companies` for company-level scanning
+
+### 4. Inspect the strategy, not just the row
+
+```text
+/sniper explain 42
+/sniper route 42
+/sniper pitch 42
+/sniper dossier company:key
+```
+
+Use:
+
+- `explain` to understand the score and gates
+- `route` to understand the recommended contact/application route
+- `pitch` to see the wedge to lead with
+- `dossier` to get the company-level brief
+
+### 5. Log outreach and outcomes
+
+```text
+/sniper contact log north --channel email --job 42 --note intro sent
+/sniper outcome log north --result reply --job 42 --note recruiter replied
+/sniper experiments
+```
+
+This closes the loop so the system can surface which routes and themes are actually working.
+
+### 6. Sync to Google Sheets
+
+```text
+/sniper sheet sync
+/sniper sheet pull
+```
+
+Use Sheets as the operational board if you want browser-based review and editing without changing git.
+
+## Role Packs and Customization
+
+This project is not tied to one person, one city, or one industry.
+
+The search engine is role-pack-driven. Each lane is defined in `config.json` with:
 
 - `label`
 - `type`
@@ -160,15 +241,23 @@ Each lane is a role pack with:
 - optional `startupTerms`
 - optional `companyTerms`
 
-Typical uses:
+Main customization points:
 
-- switch the search market from one city or country to another
-- run a remote-only search
-- use it for one candidate, a recruiting workflow, or a coaching workflow
-- add a new field like policy, biotech, legal ops, data science, or climate research
-- use it only for research, or for research plus outreach
+- `config.json`
+  Target markets, lanes, sources, blacklists, and sheet settings
+- `profile/cv.md` and `profile/profile.json`
+  Local runtime profile files created by onboarding
+- role packs
+  Add new fields and search lanes without rewriting the engine
 
-### Example: add a new lane for climate policy
+Typical customizations:
+
+- switch from one city/country to another
+- run remote-only targeting
+- use it for one candidate or many different profiles
+- add new lanes for fields like policy, biotech, legal ops, data science, climate, research, or recruiting
+
+### Example: custom lane
 
 ```json
 {
@@ -204,100 +293,16 @@ Typical uses:
 }
 ```
 
-After adding the lane:
+Then run:
 
 ```text
 /sniper run --lane policy_jobs
 /sniper blacklist add --lane policy_jobs --keyword lobbying
 ```
 
-## Typical workflow
-
-### 1. Onboard a profile
-
-Paste text directly:
-
-```text
-/sniper onboard I am a frontend engineer focused on devtools, based in London, open to hybrid and remote roles...
-```
-
-Or use a local file:
-
-```text
-/sniper onboard /absolute/path/to/cv.pdf
-```
-
-### 2. Run discovery
-
-```text
-/sniper run
-/sniper run --lane design_jobs
-/sniper run --lane policy_jobs
-/sniper run --company-watch
-```
-
-This will:
-
-- search configured sources
-- normalize job and company records
-- enrich public contact surfaces
-- score the jobs against the onboarded profile
-
-### 3. Review the output
-
-```text
-/sniper digest
-/sniper shortlist
-/sniper triage
-/sniper companies
-```
-
-Use `digest` for a score-first view.
-
-Use `triage` for an action-first view. That is the V2 shortlist that answers "what deserves energy now?"
-
-### 4. Enrich promising companies
-
-```text
-/sniper enrich company <company-id-or-key>
-/sniper contacts <company-id-or-key>
-/sniper dossier <company-id-or-key>
-```
-
-`companies` is a lightweight list view.
-
-`dossier` is the company strategy brief: why it matters, best route, best angle, contacts found, open roles, and whether to act now or watch.
-
-### 5. Draft outreach
-
-```text
-/sniper draft 42
-/sniper route 42
-/sniper pitch 42
-```
-
-V2 stays deterministic-first and inspectable. It does not auto-send emails, auto-apply, or hide decisions behind a black box.
-
-### 6. Log outcomes
-
-```text
-/sniper contact log north --channel email --job 42 --note intro sent
-/sniper outcome log north --result reply --job 42 --note recruiter replied
-/sniper experiments
-```
-
-Those logs feed the route/theme feedback loop so the tool can surface what is actually producing replies and positive signals.
-
-### 7. Sync to Google Sheets
-
-```text
-/sniper sheet sync
-/sniper sheet pull
-```
-
 ## Google Sheets
 
-For live Sheets sync, provide one of:
+To enable live Sheets sync, provide one of:
 
 - `SNIPER_GOOGLE_SERVICE_ACCOUNT_PATH`
 - `SNIPER_GOOGLE_SERVICE_ACCOUNT_JSON`
@@ -307,15 +312,7 @@ Optional:
 - `SNIPER_GOOGLE_SHEET_ID`
 - `SNIPER_GOOGLE_FOLDER_ID`
 
-If no sheet ID is configured, first sync creates a spreadsheet named `Job Sniper`.
-
-V2 adds new strategy columns to the `Jobs`, `Companies`, and `RunMetrics` tabs while preserving the existing manual-edit workflow.
-
-Examples:
-
-- `Jobs`: recommendation, recommended route, pitch theme, pitch angle, outreach leverage, interview probability band, opportunity cost band
-- `Companies`: recommendation, best route, pitch theme, direct contact count, reachable now, priority band
-- `RunMetrics`: actionable count, route mix, direct-contact company count, average outreach leverage
+If no spreadsheet ID is configured, the first sync creates a spreadsheet named `Job Sniper`.
 
 Default tabs:
 
@@ -332,47 +329,73 @@ Manual columns preserved on sync:
 - `outreach_state`
 - `manual_contact_override`
 
-## AI workflow examples
+This lets you manage the browser-visible board directly while keeping SQLite as the local source of truth.
 
-### OpenClaw + Google Sheets
+## AI and Browser Workflows
 
-Use the sheet as the operational board:
+### OpenClaw + Sheets
 
-- `Jobs` for ranking and outreach state
-- `Companies` for company research
-- `Contacts` for public hiring surfaces
+Use Job Sniper to produce the data, then use the sheet as the live board:
+
+- `Jobs` for prioritization and outreach state
+- `Companies` for company tracking
+- `Contacts` for public contact surfaces
+- `RunMetrics` for run-level monitoring
 
 Example:
 
 ```text
-Open the Job Sniper Google Sheet, find the high-priority rows, visit the job pages, and draft outreach for the top 3.
+Open the Job Sniper Google Sheet, find the high-priority rows, review the job pages, and draft outreach for the top 3.
 ```
 
 ### ChatGPT or Gemini
 
-You can:
+You can export or paste rows and ask for:
 
-- paste selected rows into the chat
-- export CSV and upload it
-- ask the model to rank opportunities, compare roles, or rewrite outreach
+- ranking help
+- comparison across roles
+- rewrite suggestions for outreach
+- prep notes before applying
 
 Example:
 
 ```text
-Here is my Jobs sheet export. Rank the top 10 roles by likely interview conversion.
+Here is my Jobs export. Rank the top 10 opportunities by likely interview conversion and explain why.
 ```
 
 ### Notion
 
-This repo does not write to Notion directly, but the workflow is simple:
+This repo does not write to Notion directly, but the practical workflow is:
 
-1. Sync to Google Sheets
-2. Mirror selected rows into Notion
-3. Use Notion for dossiers, prep notes, and application tracking
+1. run Job Sniper
+2. sync to Sheets
+3. mirror selected companies or jobs into Notion
+4. use Notion for prep notes, dossier writing, interview prep, or application tracking
 
-## Privacy and secrets
+## Foundation for the Web App
 
-This project is designed to keep runtime data out of git.
+This repo is now positioned as the backend foundation for a future dashboard.
+
+What already exists:
+
+- typed service layer
+- typed read models for jobs, companies, contacts, runs, and dossiers
+- first-class run records
+- adapter-style Sheets sync
+- deterministic pipeline boundaries
+
+What is intentionally not added yet:
+
+- no local HTTP server by default
+- no automatic emailing
+- no automatic application submission
+- no black-box ranking layer
+
+That means the next web app can be built on top of the existing services instead of replacing the engine.
+
+## Privacy and Secrets
+
+Runtime data should stay out of git.
 
 Ignored local state includes:
 
@@ -381,26 +404,26 @@ Ignored local state includes:
 - `data/*.html`
 - `.env`
 
-Expected secrets should come from environment variables, not committed files:
+Expected secrets come from environment variables, not committed files:
 
 - `SNIPER_GOOGLE_SERVICE_ACCOUNT_PATH`
 - `SNIPER_GOOGLE_SERVICE_ACCOUNT_JSON`
 - `SNIPER_GOOGLE_SHEET_ID`
 - `SNIPER_GOOGLE_FOLDER_ID`
 
-## Repo structure
+## Repo Structure
 
 - [README.md](README.md)
   Main documentation
 - [SKILL.md](SKILL.md)
   Minimal OpenClaw skill wrapper
-- [src/cli.ts](src/cli.ts)
-  Command parsing
+- [src/services](src/services)
+  Engine-facing service boundary
 - [src/search](src/search)
   Discovery, crawling, parsing, enrichment
 - [src/db.ts](src/db.ts)
   SQLite schema and persistence
 - [src/sheets.ts](src/sheets.ts)
-  Google Sheets sync and pull
+  Google Sheets integration
 - [test](test)
-  Regression and integration coverage
+  Regression, integration, and service-layer coverage
