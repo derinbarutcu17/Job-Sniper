@@ -1,9 +1,5 @@
 # Job Sniper
 
-<p align="center">
-  <img src="assets/job-sniper-mascot.png" alt="Job Sniper mascot" width="960" />
-</p>
-
 `job-sniper` is a local-first job intelligence engine for finding roles, tracking companies, collecting public hiring contacts, and managing a structured outreach workflow.
 
 It is designed to do more than scrape jobs. It helps you decide:
