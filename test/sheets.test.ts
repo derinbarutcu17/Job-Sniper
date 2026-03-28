@@ -32,6 +32,15 @@ class FakeSheetGateway implements SheetGateway {
     this.sheets.set(title, rows);
     this.headers.set(title, headers);
   }
+
+  async listSheetTitles(): Promise<string[]> {
+    return [...this.sheets.keys()];
+  }
+
+  async deleteSheet(_spreadsheetId: string, title: string): Promise<void> {
+    this.sheets.delete(title);
+    this.headers.delete(title);
+  }
 }
 
 function profile(): ProfileSummary {
@@ -163,6 +172,7 @@ describe("sheets sync", () => {
     expect(gateway.headers.get("Companies")).toContain("best_route");
     expect(gateway.headers.get("RunMetrics")).toContain("total_discovered");
     expect(gateway.headers.get("RunMetrics")).toContain("actionable_count");
+    expect(gateway.sheets.has("Jobs ")).toBe(false);
     expect(gateway.sheets.has("Jobs 2026-03-11")).toBe(true);
     expect(gateway.headers.get("Jobs 2026-03-11")).toContain("canonical_key");
     expect(after).toHaveLength(1);
@@ -208,6 +218,65 @@ describe("sheets sync", () => {
     expect(job.manual_status).toBe("interested");
     expect(job.priority).toBe("high");
     expect(job.manual_contact_override).toBe("founder@moda.ai");
+    if (previousSheetId) {
+      process.env.SNIPER_GOOGLE_SHEET_ID = previousSheetId;
+    } else {
+      delete process.env.SNIPER_GOOGLE_SHEET_ID;
+    }
+  });
+
+  it("does not count ghost sheet rows as successful pulls and removes stale daily tabs", async () => {
+    const previousSheetId = process.env.SNIPER_GOOGLE_SHEET_ID;
+    delete process.env.SNIPER_GOOGLE_SHEET_ID;
+    const baseDir = makeTempDir();
+    const gateway = new FakeSheetGateway();
+    const { db } = openDatabase(baseDir);
+    const config = loadConfig(baseDir);
+    const prof = profile();
+
+    upsertJob(
+      db,
+      config,
+      { ...listing(), postedAt: "2026-03-10", url: "https://jobs.example.com/design-10", applyUrl: "https://jobs.example.com/design-10" },
+      82,
+      "Good Match",
+      "Strong fit",
+      ["figma"],
+      prof,
+      {
+        titleFit: 10,
+        skillFit: 10,
+        seniorityFit: 10,
+        locationFit: 10,
+        workModelFit: 10,
+        languageFit: 10,
+        companyFit: 0,
+        startupFit: 0,
+        freshnessFit: 0,
+        contactabilityFit: 0,
+        sourceQualityFit: 0,
+        positives: ["figma"],
+        negatives: [],
+        gatesPassed: ["title_family"],
+        gatesFailed: [],
+      },
+      "eligible",
+    );
+
+    await syncSheets(baseDir, gateway);
+    expect(gateway.sheets.has("Jobs 2026-03-10")).toBe(true);
+
+    gateway.sheets.set("Jobs", [
+      { canonical_key: "ghost-job", owner_notes: "ignore me" },
+    ]);
+    process.env.SNIPER_GOOGLE_SHEET_ID = "sheet-123";
+    const pull = await pullSheets(baseDir, gateway);
+    expect(pull.pulled).toBe(0);
+
+    db.prepare("DELETE FROM jobs").run();
+    await syncSheets(baseDir, gateway);
+    expect(gateway.sheets.has("Jobs 2026-03-10")).toBe(false);
+
     if (previousSheetId) {
       process.env.SNIPER_GOOGLE_SHEET_ID = previousSheetId;
     } else {

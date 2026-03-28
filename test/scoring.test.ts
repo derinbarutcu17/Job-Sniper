@@ -89,6 +89,20 @@ describe("scoring", () => {
     expect(scored.eligibility).toBe("excluded");
   });
 
+  it("does not hard exclude startup-friendly founding titles", () => {
+    const config = loadConfig(makeTempDir());
+    const scored = scoreListing(
+      config,
+      profile,
+      listing({
+        title: "Founding Designer",
+        description: "Early-stage startup design role with Figma and product design.",
+      }),
+    );
+    expect(scored.category).not.toBe("Excluded");
+    expect(scored.breakdown.gatesFailed).not.toContain("title_seniority");
+  });
+
   it("excludes closed roles from explicit closure text", () => {
     const config = loadConfig(makeTempDir());
     const scored = scoreListing(
@@ -172,5 +186,14 @@ describe("scoring", () => {
     expect(scored.category).not.toBe("Excluded");
     expect(scored.titleFamily).toBe("Policy Analyst");
     expect(scored.score).toBeGreaterThan(45);
+  });
+
+  it("expands title normalization for hybrid design and automation roles", () => {
+    const config = loadConfig(makeTempDir());
+    expect(listing({ lane: "design_jobs", title: "Design Technologist" }).lane).toBe("design_jobs");
+    expect(scoreListing(config, profile, listing({ title: "Design Technologist" })).titleFamily).toBe("Design Engineer");
+    expect(scoreListing(config, profile, listing({ title: "Visual Designer" })).titleFamily).toBe("UI/UX Designer");
+    expect(scoreListing(config, profile, listing({ lane: "ai_coding_jobs", title: "Agent Workflow Builder" })).titleFamily).toBe("Automation Engineer");
+    expect(scoreListing(config, profile, listing({ title: "Design Systems Engineer" })).titleFamily).toBe("Design Engineer");
   });
 });

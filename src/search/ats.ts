@@ -1,6 +1,6 @@
 import { mapLimit } from "../lib/async.js";
 import { defaultConfig } from "../config.js";
-import { summarizeToLine, uniqueNonEmpty } from "../lib/text.js";
+import { normalizeText, summarizeToLine, uniqueNonEmpty } from "../lib/text.js";
 import { domainFromUrl, normalizeUrl } from "../lib/url.js";
 import * as cheerio from "cheerio";
 import { collectQueryTerms, getDefaultCompanyWatchLane, getDefaultJobLane, inferRolePackLane, isCompanyWatchLane } from "../role-packs.js";
@@ -264,9 +264,9 @@ function buildWellfoundListingFromSearchResult(source: AtsBoardSource, result: S
     applicantLocationRequirements: [],
     applicationContactName: "",
     applicationContactEmail: "",
-    parseConfidence: 0.38,
-    sourceConfidence: 0.62,
-    isRealJobPage: false,
+    parseConfidence: result.url.includes("/jobs/") ? 0.44 : 0.28,
+    sourceConfidence: result.url.includes("/jobs/") ? 0.62 : 0.48,
+    isRealJobPage: result.url.includes("/jobs/"),
     raw: { provider: "wellfound", fallback: "search_result", query: result.query },
   };
 }
@@ -342,6 +342,42 @@ function buildWellfoundFallbackQueries(source: AtsBoardSource, config: SniperCon
   ];
 }
 
+function scoreWellfoundFallbackResult(
+  source: AtsBoardSource,
+  result: SearchResult,
+  config: SniperConfig,
+): number {
+  const lane = source.lane ?? getDefaultJobLane(config);
+  const text = normalizeText(`${result.title} ${result.snippet}`);
+  const laneTerms = collectQueryTerms(config, lane).map(normalizeText);
+  const titleTermHits = laneTerms.filter((term) => normalizeText(result.title).includes(term)).length;
+  const snippetTermHits = laneTerms.filter((term) => normalizeText(result.snippet).includes(term)).length;
+  const isJobUrl = /wellfound\.com\/jobs\//i.test(result.url);
+  const isCompanyUrl = /wellfound\.com\/company\//i.test(result.url);
+  const hasBerlinSignal = /\bberlin\b/i.test(result.snippet);
+  const hasGermanySignal = /\bgermany|deutschland\b/i.test(result.snippet);
+  const hasRemoteSignal = /\bremote\b/i.test(result.snippet);
+  const vagueSnippet = result.snippet.trim().length < 24;
+  const weakTitle = /\bwellfound\b/i.test(result.title) && !/\bat\b|[-–|]/.test(result.title);
+  const pressyNoise = /\bnews|funding|raises|launches|series [abc]|hiring trend\b/i.test(result.title);
+  const locationMiss = !hasBerlinSignal && !hasGermanySignal && !hasRemoteSignal;
+
+  return (
+    (isJobUrl ? 12 : 0) +
+    (isCompanyUrl ? 5 : 0) +
+    titleTermHits * 4 +
+    snippetTermHits * 2 +
+    (hasBerlinSignal ? 6 : 0) +
+    (hasGermanySignal ? 3 : 0) +
+    (hasRemoteSignal ? 2 : 0) -
+    (vagueSnippet ? 5 : 0) -
+    (weakTitle ? 3 : 0) -
+    (pressyNoise ? 8 : 0) -
+    (locationMiss ? 2 : 0) +
+    (text.includes("startup") ? 1 : 0)
+  );
+}
+
 async function fetchWellfoundFromSearchFallback(source: AtsBoardSource, deps: Dependencies, config: SniperConfig): Promise<ListingCandidate[]> {
   const providers = getSearchProviders();
   const queries = buildWellfoundFallbackQueries(source, config);
@@ -360,11 +396,21 @@ async function fetchWellfoundFromSearchFallback(source: AtsBoardSource, deps: De
   for (const result of results) {
     deduped.set(normalizeUrl(result.url), result);
   }
-  const uniqueResults = [...deduped.values()].slice(0, 25);
+  const uniqueResults = [...deduped.values()]
+    .map((result) => ({ result, score: scoreWellfoundFallbackResult(source, result, config) }))
+    .filter(({ score }) => score > 0)
+    .sort((left, right) => right.score - left.score)
+    .map(({ result }) => result)
+    .slice(0, 25);
   if (isCompanyWatchLane(config, source.lane ?? getDefaultCompanyWatchLane(config))) {
     return uniqueResults.map((result) => buildWellfoundCompanyFromSearchResult(source, result, config));
   }
-  return uniqueResults.map((result) => buildWellfoundListingFromSearchResult(source, result, config));
+  const jobResults = uniqueResults.filter((result) => /wellfound\.com\/jobs\//i.test(result.url));
+  const companyResults = uniqueResults.filter((result) => /wellfound\.com\/company\//i.test(result.url));
+  const primary = (jobResults.length ? jobResults : companyResults).map((result) =>
+    buildWellfoundListingFromSearchResult(source, result, config),
+  );
+  return primary;
 }
 
 export async function crawlUrl(
@@ -530,13 +576,14 @@ async function discoverGenericBoard(source: AtsBoardSource, deps: Dependencies, 
   const lane = source.lane ?? getDefaultCompanyWatchLane(config);
   const outcome = await crawlUrl(source.url, lane, "ats", source.provider || inferProvider(source.url), deps, config);
   const direct = [...outcome.listings];
-  if (!outcome.childUrls.length) {
+  if (direct.length || !outcome.childUrls.length) {
     return direct;
   }
 
   const expanded = await mapLimit(outcome.childUrls.slice(0, 20), 4, async (childUrl) => {
     try {
-      return (await crawlUrl(childUrl, source.lane ?? getDefaultJobLane(config), "ats", source.provider || inferProvider(childUrl), deps, config)).listings;
+      const child = await crawlUrl(childUrl, source.lane ?? getDefaultJobLane(config), "ats", source.provider || inferProvider(childUrl), deps, config);
+      return child.listings.filter((listing) => listing.isRealJobPage || listing.parseConfidence >= 0.45);
     } catch {
       return [];
     }

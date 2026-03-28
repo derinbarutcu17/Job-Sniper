@@ -32,6 +32,7 @@ export type ProbabilityBand = "low" | "medium" | "high";
 export type PriorityBand = "low" | "medium" | "high";
 export type ContactChannel = "email" | "linkedin" | "ats" | "founder";
 export type OutcomeResult = "no_reply" | "reply" | "call" | "interview" | "rejected" | "positive_signal";
+export type RunStatus = "running" | "succeeded" | "failed" | "partial";
 
 export interface RolePackTitleFamily {
   family: string;
@@ -401,6 +402,8 @@ export interface JobRecord {
 }
 
 export interface RunSummary {
+  runId?: number;
+  status?: RunStatus;
   totalFound: number;
   totalNew: number;
   totalUpdated: number;
@@ -421,6 +424,207 @@ export interface RunSummary {
   directContactCompanies?: number;
   founderSurfaceCompanies?: number;
   averageOutreachLeverageScore?: number;
+  warnings?: string[];
+  errors?: string[];
+}
+
+export interface PipelineContext {
+  runId: number;
+  lane?: SearchLane;
+  companyWatchOnly?: boolean;
+  configSnapshot: SniperConfig;
+  profileSnapshot: ProfileSummary;
+  sourceBreakdown: Record<string, number>;
+  warnings: string[];
+  errors: string[];
+}
+
+export interface RunRecord {
+  id: number;
+  started_at: string;
+  finished_at: string;
+  status: RunStatus;
+  lane: string;
+  mode: string;
+  source_breakdown_json: string;
+  warnings_json: string;
+  errors_json: string;
+  artifacts_json: string;
+  summary_json: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface JobSummary {
+  id: number;
+  canonicalKey: string;
+  title: string;
+  titleFamily: string;
+  companyName: string;
+  lane: LaneId;
+  score: number;
+  eligibility: string;
+  category: Category;
+  recommendation: OpportunityRecommendation;
+  recommendedRoute: RecommendedRoute;
+  routeConfidence: number;
+  location: string;
+  workModel: WorkModel;
+  postedAt: string;
+  url: string;
+}
+
+export interface JobDetail extends JobSummary {
+  description: string;
+  language: string;
+  salary: string;
+  department: string;
+  pitchTheme: PitchTheme;
+  pitchAngle: string;
+  strongestProfileSignal: string;
+  strongestCompanySignal: string;
+  outreachLeverageScore: number;
+  interviewProbabilityBand: ProbabilityBand;
+  opportunityCostBand: ProbabilityBand;
+  explanation: DecisionExplanation;
+  publicContacts: ContactCandidate[];
+  sourceUrls: string[];
+}
+
+export interface JobDetailView extends JobDetail {}
+
+export interface TriageItem extends JobSummary {
+  recommendationReason: string;
+  outreachLeverageScore: number;
+}
+
+export interface CompanySummary {
+  id: number;
+  canonicalKey: string;
+  name: string;
+  domain: string;
+  location: string;
+  recommendation: OpportunityRecommendation;
+  bestRoute: RecommendedRoute;
+  startupScore: number;
+  companyFitScore: number;
+  hiringSignalScore: number;
+  directContactCount: number;
+  priorityBand: PriorityBand;
+  careersUrl: string;
+}
+
+export interface CompanyDetail extends CompanySummary {
+  companyUrl: string;
+  aboutUrl: string;
+  teamUrl: string;
+  contactUrl: string;
+  pressUrl: string;
+  linkedinUrl: string;
+  description: string;
+  startupSignals: string[];
+  hiringSignals: string[];
+  publicContacts: string[];
+  founderNames: string[];
+  cities: string[];
+  pitchTheme: PitchTheme;
+  pitchAngle: string;
+  recommendationReason: string;
+}
+
+export interface CompanyAggregate {
+  company: CompanyDetail;
+  jobs: JobSummary[];
+  contacts: ContactSummary[];
+  recentContactLog: ContactLogEntry[];
+  recentOutcomeLog: OutcomeLogEntry[];
+  evidence: string[];
+  trustLevel: ConfidenceBand;
+}
+
+export interface CompanyDossierView {
+  company: CompanyDetail;
+  bestRoute: RecommendedRoute;
+  recommendation: OpportunityRecommendation;
+  recommendationReason: string;
+  pitchTheme: PitchTheme;
+  pitchAngle: string;
+  contacts: ContactSummary[];
+  jobs: JobSummary[];
+  recentContactLog: ContactLogEntry[];
+  recentOutcomeLog: OutcomeLogEntry[];
+  evidence: string[];
+  trustLevel: ConfidenceBand;
+}
+
+export interface ContactSummary {
+  id: number;
+  canonicalKey: string;
+  companyName: string;
+  kind: ContactKind | string;
+  name: string;
+  title: string;
+  email: string;
+  linkedinUrl: string;
+  sourceUrl: string;
+  confidence: ConfidenceBand;
+  isPublic: boolean;
+  evidenceType: string;
+}
+
+export interface RunMetricsSnapshot extends RunSummary {}
+
+export interface RunResult {
+  run: RunRecord;
+  summary: RunSummary;
+}
+
+export interface StatsSnapshot {
+  jobs: { total: number; eligible: number };
+  companies: number;
+  contacts: number;
+  strategic: {
+    actionable: number;
+    applyNow: number;
+    coldEmail: number;
+    enrichFirst: number;
+    watch: number;
+    discard: number;
+    averageOutreachLeverage: number;
+  };
+  latestRun?: RunRecord | null;
+}
+
+export interface SheetSyncResult {
+  spreadsheetId: string;
+  url: string;
+  jobs: number;
+  runId?: number | null;
+}
+
+export interface OnboardRequest {
+  input: string;
+}
+
+export interface RunRequest {
+  lane?: SearchLane;
+  companyWatchOnly?: boolean;
+}
+
+export interface TriageListRequest {
+  limit?: number;
+}
+
+export interface JobListRequest {
+  limit?: number;
+}
+
+export interface CompanyListRequest {
+  limit?: number;
+}
+
+export interface ContactsListRequest {
+  companyRef?: string;
 }
 
 export interface ContactLogEntry {

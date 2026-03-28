@@ -58,5 +58,59 @@ describe("pitch generation", () => {
     expect(pitch.strongestProfileSignal).toBeTruthy();
     expect(pitch.pitchAngle.length).toBeGreaterThan(20);
   });
-});
 
+  it("prefers ai_workflows when the role is clearly AI-native", () => {
+    const profile: ProfileSummary = {
+      roleFamilies: ["design_jobs", "ai_coding_jobs"],
+      targetSeniority: "mid",
+      allowStretchRoles: true,
+      avoidTitleTerms: [],
+      preferredLocations: ["Berlin"],
+      languagePreference: ["en"],
+      toolSignals: ["figma", "react", "typescript", "agent workflows", "openai"],
+      summary: "Hybrid creative technologist profile",
+    };
+    const listing: ListingCandidate = {
+      lane: "ai_coding_jobs",
+      externalId: "2",
+      title: "AI Product Engineer",
+      titleFamily: "",
+      company: "Signal Forge",
+      location: "Berlin",
+      country: "Germany",
+      language: "en",
+      workModel: "hybrid",
+      employmentType: "",
+      salary: "",
+      description: "Build agent workflows, LLM product loops, and TypeScript systems for a small team shipping quickly.",
+      url: "https://jobs.example.com/2",
+      applyUrl: "https://jobs.example.com/2",
+      source: "test",
+      sourceType: "page",
+      sourceUrls: [],
+      companyUrl: "",
+      careersUrl: "",
+      aboutUrl: "",
+      teamUrl: "",
+      contactUrl: "",
+      pressUrl: "",
+      companyLinkedinUrl: "",
+      publicContacts: [],
+      postedAt: "",
+      validThrough: "",
+      department: "",
+      experienceYearsText: "",
+      remoteScope: "",
+      applicantLocationRequirements: [],
+      applicationContactName: "",
+      applicationContactEmail: "",
+      parseConfidence: 0.9,
+      sourceConfidence: 0.9,
+      isRealJobPage: true,
+      raw: {},
+    };
+    const pitch = inferPitch(listing, profile);
+    expect(pitch.pitchTheme).toBe("ai_workflows");
+    expect(pitch.strongestCompanySignal).toMatch(/ai|agent|workflow/i);
+  });
+});

@@ -31,8 +31,10 @@ Primary commands:
 - `shortlist [limit]`
 - `triage [limit]`
 - `draft <job-id>`
+- `explain <job-id>`
 - `route <job-id>`
 - `pitch <job-id>`
+- `blacklist add [--company | --keyword] [--lane <lane>] <term>`
 - `companies [limit]`
 - `dossier <company-id-or-key>`
 - `contacts [company-id-or-key]`
@@ -40,7 +42,11 @@ Primary commands:
 - `contact log <company-id-or-key> --channel <...> [--job <job-id>]`
 - `outcome log <company-id-or-key> --result <...> [--job <job-id>]`
 - `experiments`
+- `requeue <url> [lane]`
+- `sources test`
 - `sheet sync`
 - `sheet pull`
+- `stats`
+- `export json [path]`
 
 See `README.md` for setup, customization, workflow examples, privacy guidance, and configuration details.

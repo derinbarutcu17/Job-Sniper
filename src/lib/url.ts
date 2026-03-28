@@ -27,11 +27,11 @@ export function domainFromUrl(rawUrl: string): string {
 }
 
 export function canonicalJobKey(url: string, externalId: string, title: string, company: string): string {
-  if (externalId.trim()) {
-    return `job:${slugify(externalId)}`;
-  }
   if (url.trim()) {
     return `job:${slugify(normalizeUrl(url))}`;
+  }
+  if (externalId.trim()) {
+    return `job:${slugify(externalId)}`;
   }
   return `job:${slugify(`${company}-${title}`)}`;
 }

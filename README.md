@@ -1,12 +1,19 @@
-# Claw Job Sniper
+# Job Sniper
 
 <p align="center">
-  <img src="assets/job-sniper-mascot.png" alt="Claw Job Sniper mascot" width="960" />
+  <img src="assets/job-sniper-mascot.png" alt="Job Sniper mascot" width="960" />
 </p>
 
-`claw-job-sniper` is a local-first OpenClaw skill for finding jobs, tracking companies, collecting public hiring contacts, and running a structured outreach workflow.
+`job-sniper` is a local-first OpenClaw skill for finding jobs, tracking companies, collecting public hiring contacts, and running a structured outreach workflow.
 
 V2 keeps the existing discovery engine, but adds a second layer on top: deterministic decision support for what to do next, which route to use, and what angle to lead with.
+
+The current foundation is also split into a local engine boundary:
+- typed service layer
+- typed read models and dossier views
+- first-class run records
+- adapter-style Google Sheets sync
+- CLI as a presentation shell over the engine, not the engine itself
 
 It keeps a SQLite database as the source of truth, searches the public web plus common ATS surfaces, ranks opportunities against your profile, recommends the next action, and syncs the output into Google Sheets.
 
@@ -33,6 +40,7 @@ You act as the director. The agent figures out which commands to run and handles
 - Company dossier and outcome-learning workflow
 - Google Sheets sync with manual columns preserved
 - OpenClaw-friendly command surface for scouting, reviewing, and drafting
+- Web-app-ready internal contracts without introducing a server yet
 
 ## What it is
 
@@ -303,7 +311,7 @@ Optional:
 - `SNIPER_GOOGLE_SHEET_ID`
 - `SNIPER_GOOGLE_FOLDER_ID`
 
-If no sheet ID is configured, first sync creates a spreadsheet named `Claw Job Sniper`.
+If no sheet ID is configured, first sync creates a spreadsheet named `Job Sniper`.
 
 V2 adds new strategy columns to the `Jobs`, `Companies`, and `RunMetrics` tabs while preserving the existing manual-edit workflow.
 
@@ -341,7 +349,7 @@ Use the sheet as the operational board:
 Example:
 
 ```text
-Open the Claw Job Sniper Google Sheet, find the high-priority rows, visit the job pages, and draft outreach for the top 3.
+Open the Job Sniper Google Sheet, find the high-priority rows, visit the job pages, and draft outreach for the top 3.
 ```
 
 ### ChatGPT or Gemini

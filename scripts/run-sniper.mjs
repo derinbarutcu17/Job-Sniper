@@ -23,9 +23,7 @@ function ensureDependencies() {
 
 ensureDependencies();
 
-const tsxCli = path.join(baseDir, "node_modules", ".bin", "tsx");
-const cliPath = path.join(baseDir, "src", "cli.ts");
-const result = spawnSync(tsxCli, [cliPath, ...process.argv.slice(2)], {
+const result = spawnSync("node", ["--import", "tsx", path.join(baseDir, "scripts", "run-sniper-cli.mjs"), ...process.argv.slice(2)], {
   cwd: baseDir,
   stdio: "inherit",
   env: { ...process.env, SNIPER_BASE_DIR: baseDir },

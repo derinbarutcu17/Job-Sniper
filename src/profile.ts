@@ -22,6 +22,17 @@ const POSITIVE_SENIORITY_PATTERNS: Array<{ level: SeniorityTarget; pattern: RegE
 
 const TITLE_AVOID_TERMS = ["senior", "lead", "manager", "director", "head", "principal", "staff"];
 
+function looksLikeFilePath(input: string): boolean {
+  const hasWhitespace = /\s/.test(input);
+  return (
+    input.startsWith("/") ||
+    input.startsWith("./") ||
+    input.startsWith("../") ||
+    (!hasWhitespace && /[\\/]/.test(input)) ||
+    (!hasWhitespace && /\.(pdf|txt|md|doc|docx)$/i.test(input))
+  );
+}
+
 async function readProfileInput(input: string): Promise<string> {
   const trimmed = input.trim();
   if (!trimmed) {
@@ -36,6 +47,10 @@ async function readProfileInput(input: string): Promise<string> {
       return parsed.text.trim();
     }
     return fs.readFileSync(trimmed, "utf8").trim();
+  }
+
+  if (looksLikeFilePath(trimmed)) {
+    throw new Error(`Profile file was not found: ${trimmed}`);
   }
 
   return trimmed;

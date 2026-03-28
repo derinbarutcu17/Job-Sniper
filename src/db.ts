@@ -18,6 +18,8 @@ import type {
   OutcomeLogEntry,
   OutcomeResult,
   ProfileSummary,
+  RunRecord,
+  RunStatus,
   RunSummary,
   ScoreBreakdown,
   SearchLane,
@@ -29,8 +31,47 @@ export interface DatabaseBundle {
   baseDir: string;
 }
 
+interface FinishRunInput {
+  status: "succeeded" | "failed" | "partial";
+  sourceBreakdown: Record<string, number>;
+  warnings: string[];
+  errors: string[];
+  artifacts: string[];
+  summary: RunSummary;
+}
+
 function nowIso(now = new Date()): string {
   return now.toISOString();
+}
+
+function parseStoredArray(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0);
+  }
+  if (typeof value !== "string" || !value.trim()) {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return Array.isArray(parsed)
+      ? parsed.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function mergeStringArrays(...values: Array<unknown>): string[] {
+  return uniqueNonEmpty(values.flatMap((value) => parseStoredArray(value)));
+}
+
+function preferNonEmpty(...values: Array<unknown>): string {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) {
+      return value;
+    }
+  }
+  return "";
 }
 
 function hasColumn(db: Database.Database, table: string, column: string): boolean {
@@ -223,6 +264,7 @@ function createSchema(db: Database.Database): void {
 
     CREATE TABLE IF NOT EXISTS run_metrics (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
+      run_id INTEGER,
       started_at TEXT NOT NULL,
       finished_at TEXT DEFAULT '',
       total_discovered INTEGER DEFAULT 0,
@@ -243,7 +285,24 @@ function createSchema(db: Database.Database): void {
       direct_contact_companies INTEGER DEFAULT 0,
       founder_surface_companies INTEGER DEFAULT 0,
       average_outreach_leverage_score REAL DEFAULT 0,
-      source_breakdown_json TEXT DEFAULT '{}'
+      source_breakdown_json TEXT DEFAULT '{}',
+      FOREIGN KEY(run_id) REFERENCES runs(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS runs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      started_at TEXT NOT NULL,
+      finished_at TEXT DEFAULT '',
+      status TEXT DEFAULT 'running',
+      lane TEXT DEFAULT '',
+      mode TEXT DEFAULT 'full',
+      source_breakdown_json TEXT DEFAULT '{}',
+      warnings_json TEXT DEFAULT '[]',
+      errors_json TEXT DEFAULT '[]',
+      artifacts_json TEXT DEFAULT '[]',
+      summary_json TEXT DEFAULT '{}',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
     );
 
     CREATE TABLE IF NOT EXISTS contact_log (
@@ -337,6 +396,7 @@ function patchExistingSchema(db: Database.Database): void {
   ] as const;
 
   const runMetricColumns = [
+    ["run_id", "INTEGER"],
     ["actionable_count", "INTEGER DEFAULT 0"],
     ["apply_now_count", "INTEGER DEFAULT 0"],
     ["cold_email_count", "INTEGER DEFAULT 0"],
@@ -602,6 +662,20 @@ export function markCandidateStatus(db: Database.Database, normalizedUrl: string
 
 export function upsertCompany(db: Database.Database, input: CompanyRecordInput): number {
   const timestamp = input.lastSeenAt || nowIso();
+  const existing = db.prepare("SELECT * FROM companies WHERE canonical_key = ?").get(input.canonicalKey) as Record<string, unknown> | undefined;
+  const mergedSourceUrls = mergeStringArrays(existing?.source_urls, input.sourceUrls);
+  const mergedPublicContacts = mergeStringArrays(existing?.public_contacts, input.publicContacts);
+  const mergedStartupSignals = mergeStringArrays(existing?.startup_signals, input.startupSignals);
+  const mergedHiringSignals = mergeStringArrays(existing?.hiring_signals, input.hiringSignals);
+  const mergedFounderNames = mergeStringArrays(existing?.founder_names, input.founderNames);
+  const mergedCities = mergeStringArrays(existing?.cities, input.cities);
+  const mergedPitchEvidence = mergeStringArrays(existing?.pitch_evidence, input.pitchEvidence ?? []);
+  const directContactCount = Math.max(
+    Number(existing?.direct_contact_count ?? 0),
+    input.directContactCount ?? uniqueNonEmpty(input.publicContacts).length,
+  );
+  const reachableNow = Boolean(Number(existing?.reachable_now ?? 0) || input.reachableNow || directContactCount > 0);
+
   db.prepare(`
     INSERT INTO companies (
       canonical_key, name, domain, location, company_url, careers_url, about_url, team_url,
@@ -659,43 +733,43 @@ export function upsertCompany(db: Database.Database, input: CompanyRecordInput):
       updated_at = excluded.updated_at
   `).run({
     canonical_key: input.canonicalKey,
-    name: input.name,
-    domain: input.domain,
-    location: input.location,
-    company_url: input.companyUrl,
-    careers_url: input.careersUrl,
-    about_url: input.aboutUrl,
-    team_url: input.teamUrl,
-    contact_url: input.contactUrl,
-    press_url: input.pressUrl,
-    linkedin_url: input.linkedinUrl,
-    description: input.description,
-    source_urls: JSON.stringify(uniqueNonEmpty(input.sourceUrls)),
-    public_contacts: JSON.stringify(uniqueNonEmpty(input.publicContacts)),
-    startup_signals: JSON.stringify(uniqueNonEmpty(input.startupSignals)),
-    hiring_signals: JSON.stringify(uniqueNonEmpty(input.hiringSignals)),
-    founder_names: JSON.stringify(uniqueNonEmpty(input.founderNames)),
-    cities: JSON.stringify(uniqueNonEmpty(input.cities)),
-    size_band: input.sizeBand,
-    stage_text: input.stageText,
-    remote_policy: input.remotePolicy,
-    open_role_count: input.openRoleCount,
-    startup_score: input.startupScore,
-    company_fit_score: input.companyFitScore,
-    hiring_signal_score: input.hiringSignalScore,
-    contactability_score: input.contactabilityScore,
-    is_startup_candidate: input.isStartupCandidate ? 1 : 0,
-    recommendation: input.recommendation ?? "watch",
-    recommendation_reason: input.recommendationReason ?? "",
-    best_route: input.bestRoute ?? "watch_company",
-    pitch_theme: input.pitchTheme ?? "generalist",
-    pitch_angle: input.pitchAngle ?? "",
-    pitch_evidence: JSON.stringify(uniqueNonEmpty(input.pitchEvidence ?? [])),
-    direct_contact_count: input.directContactCount ?? uniqueNonEmpty(input.publicContacts).length,
-    reachable_now: input.reachableNow ? 1 : 0,
-    priority_band: input.priorityBand ?? "low",
+    name: preferNonEmpty(input.name, existing?.name),
+    domain: preferNonEmpty(existing?.domain, input.domain),
+    location: preferNonEmpty(input.location, existing?.location),
+    company_url: preferNonEmpty(input.companyUrl, existing?.company_url),
+    careers_url: preferNonEmpty(input.careersUrl, existing?.careers_url),
+    about_url: preferNonEmpty(input.aboutUrl, existing?.about_url),
+    team_url: preferNonEmpty(input.teamUrl, existing?.team_url),
+    contact_url: preferNonEmpty(input.contactUrl, existing?.contact_url),
+    press_url: preferNonEmpty(input.pressUrl, existing?.press_url),
+    linkedin_url: preferNonEmpty(input.linkedinUrl, existing?.linkedin_url),
+    description: preferNonEmpty(input.description, existing?.description),
+    source_urls: JSON.stringify(mergedSourceUrls),
+    public_contacts: JSON.stringify(mergedPublicContacts),
+    startup_signals: JSON.stringify(mergedStartupSignals),
+    hiring_signals: JSON.stringify(mergedHiringSignals),
+    founder_names: JSON.stringify(mergedFounderNames),
+    cities: JSON.stringify(mergedCities),
+    size_band: preferNonEmpty(input.sizeBand, existing?.size_band),
+    stage_text: preferNonEmpty(input.stageText, existing?.stage_text),
+    remote_policy: preferNonEmpty(input.remotePolicy, existing?.remote_policy),
+    open_role_count: Math.max(Number(existing?.open_role_count ?? 0), input.openRoleCount),
+    startup_score: Math.max(Number(existing?.startup_score ?? 0), input.startupScore),
+    company_fit_score: Math.max(Number(existing?.company_fit_score ?? 0), input.companyFitScore),
+    hiring_signal_score: Math.max(Number(existing?.hiring_signal_score ?? 0), input.hiringSignalScore),
+    contactability_score: Math.max(Number(existing?.contactability_score ?? 0), input.contactabilityScore),
+    is_startup_candidate: Number(existing?.is_startup_candidate ?? 0) || input.isStartupCandidate ? 1 : 0,
+    recommendation: input.recommendation ?? preferNonEmpty(existing?.recommendation, "watch"),
+    recommendation_reason: preferNonEmpty(input.recommendationReason ?? "", existing?.recommendation_reason),
+    best_route: input.bestRoute ?? preferNonEmpty(existing?.best_route, "watch_company"),
+    pitch_theme: input.pitchTheme ?? preferNonEmpty(existing?.pitch_theme, "generalist"),
+    pitch_angle: preferNonEmpty(input.pitchAngle ?? "", existing?.pitch_angle),
+    pitch_evidence: JSON.stringify(mergedPitchEvidence),
+    direct_contact_count: directContactCount,
+    reachable_now: reachableNow ? 1 : 0,
+    priority_band: preferNonEmpty(input.priorityBand ?? "", existing?.priority_band, "low"),
     last_seen_at: timestamp,
-    created_at: timestamp,
+    created_at: preferNonEmpty(existing?.created_at, timestamp),
     updated_at: timestamp,
   });
   return (db.prepare("SELECT id FROM companies WHERE canonical_key = ?").get(input.canonicalKey) as { id: number }).id;
@@ -1042,12 +1116,13 @@ export function recordRunMetrics(
 ): void {
   db.prepare(`
     INSERT INTO run_metrics (
-      started_at, finished_at, total_discovered, total_deduped, total_parsed, fetch_success_rate,
+      run_id, started_at, finished_at, total_discovered, total_deduped, total_parsed, fetch_success_rate,
       parse_success_rate, js_fallback_rate, jobs_eligible, companies_discovered, contacts_discovered,
       actionable_count, apply_now_count, cold_email_count, enrich_first_count, watch_count, discard_count,
       direct_contact_companies, founder_surface_companies, average_outreach_leverage_score, source_breakdown_json
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
+    summary.runId ?? null,
     nowIso(),
     nowIso(),
     summary.totalFound,
@@ -1070,6 +1145,55 @@ export function recordRunMetrics(
     summary.averageOutreachLeverageScore,
     JSON.stringify(sourceBreakdown),
   );
+}
+
+export function startRunRecord(
+  db: Database.Database,
+  input: { lane?: string; mode?: string },
+): number {
+  const timestamp = nowIso();
+  const result = db.prepare(`
+    INSERT INTO runs (
+      started_at, finished_at, status, lane, mode, source_breakdown_json,
+      warnings_json, errors_json, artifacts_json, summary_json, created_at, updated_at
+    ) VALUES (?, '', 'running', ?, ?, '{}', '[]', '[]', '[]', '{}', ?, ?)
+  `).run(timestamp, input.lane ?? "", input.mode ?? "full", timestamp, timestamp);
+  return Number(result.lastInsertRowid);
+}
+
+export function finishRunRecord(db: Database.Database, runId: number, input: FinishRunInput): RunRecord {
+  const timestamp = nowIso();
+  db.prepare(`
+    UPDATE runs
+    SET finished_at = ?,
+        status = ?,
+        source_breakdown_json = ?,
+        warnings_json = ?,
+        errors_json = ?,
+        artifacts_json = ?,
+        summary_json = ?,
+        updated_at = ?
+    WHERE id = ?
+  `).run(
+    timestamp,
+    input.status,
+    JSON.stringify(input.sourceBreakdown),
+    JSON.stringify(input.warnings),
+    JSON.stringify(input.errors),
+    JSON.stringify(input.artifacts),
+    JSON.stringify(input.summary),
+    timestamp,
+    runId,
+  );
+  return getRunById(db, runId)!;
+}
+
+export function getRunById(db: Database.Database, runId: number): RunRecord | undefined {
+  return db.prepare("SELECT * FROM runs WHERE id = ?").get(runId) as RunRecord | undefined;
+}
+
+export function getLatestRun(db: Database.Database): RunRecord | undefined {
+  return db.prepare("SELECT * FROM runs ORDER BY id DESC LIMIT 1").get() as RunRecord | undefined;
 }
 
 export function listTopJobs(db: Database.Database, limit: number): JobRecord[] {
@@ -1173,8 +1297,16 @@ export function listContactLog(db: Database.Database): ContactLogEntry[] {
   return db.prepare("SELECT * FROM contact_log ORDER BY created_at DESC").all() as ContactLogEntry[];
 }
 
+export function listContactLogForCompanyId(db: Database.Database, companyId: number): ContactLogEntry[] {
+  return db.prepare("SELECT * FROM contact_log WHERE company_id = ? ORDER BY created_at DESC LIMIT 25").all(companyId) as ContactLogEntry[];
+}
+
 export function listOutcomeLog(db: Database.Database): OutcomeLogEntry[] {
   return db.prepare("SELECT * FROM outcome_log ORDER BY created_at DESC").all() as OutcomeLogEntry[];
+}
+
+export function listOutcomeLogForCompanyId(db: Database.Database, companyId: number): OutcomeLogEntry[] {
+  return db.prepare("SELECT * FROM outcome_log WHERE company_id = ? ORDER BY created_at DESC LIMIT 25").all(companyId) as OutcomeLogEntry[];
 }
 
 export function saveOutreachDraft(db: Database.Database, jobId: number, draft: string): void {
@@ -1208,8 +1340,8 @@ export function updateJobManualFields(
   db: Database.Database,
   canonicalKey: string,
   fields: Partial<Pick<JobRecord, "manual_status" | "owner_notes" | "priority" | "outreach_state" | "manual_contact_override">>,
-): void {
-  db.prepare(`
+): boolean {
+  const result = db.prepare(`
     UPDATE jobs
     SET manual_status = COALESCE(@manual_status, manual_status),
         owner_notes = COALESCE(@owner_notes, owner_notes),
@@ -1227,9 +1359,12 @@ export function updateJobManualFields(
     manual_contact_override: fields.manual_contact_override ?? null,
     updated_at: nowIso(),
   });
+  return result.changes > 0;
 }
 
 export function summarizeRun(params: {
+  runId?: number;
+  status?: RunStatus;
   totalFound: number;
   totalNew: number;
   totalUpdated: number;
@@ -1250,9 +1385,13 @@ export function summarizeRun(params: {
   directContactCompanies?: number;
   founderSurfaceCompanies?: number;
   averageOutreachLeverageScore?: number;
+  warnings?: string[];
+  errors?: string[];
 }): RunSummary {
   return {
     ...params,
+    runId: params.runId,
+    status: params.status,
     actionableCount: params.actionableCount ?? 0,
     applyNowCount: params.applyNowCount ?? 0,
     coldEmailCount: params.coldEmailCount ?? 0,
@@ -1262,5 +1401,7 @@ export function summarizeRun(params: {
     directContactCompanies: params.directContactCompanies ?? 0,
     founderSurfaceCompanies: params.founderSurfaceCompanies ?? 0,
     averageOutreachLeverageScore: params.averageOutreachLeverageScore ?? 0,
+    warnings: params.warnings ?? [],
+    errors: params.errors ?? [],
   };
 }

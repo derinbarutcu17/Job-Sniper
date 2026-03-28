@@ -19,7 +19,6 @@ const ALWAYS_EXCLUDE_TITLE_TERMS = [
   "principal",
   "staff",
   "founder",
-  "founding",
   "co-founder",
   "cofounder",
   "cto",
@@ -152,7 +151,7 @@ export function scoreListing(
     };
   }
 
-  const titleFamily = normalizeTitleFamily(config, listing.lane, `${listing.title} ${listing.description}`);
+  const titleFamily = normalizeTitleFamily(config, listing.lane, listing.title);
   const titleBlob = normalizeText(`${listing.title} ${titleFamily}`);
   const descriptionBlob = normalizeText(`${listing.description} ${listing.location} ${listing.language}`);
   const allBlob = `${titleBlob} ${descriptionBlob}`;

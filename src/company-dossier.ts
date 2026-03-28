@@ -7,11 +7,35 @@ function priorityBand(score: number): CompanyDecisionSnapshot["priorityBand"] {
   return "low";
 }
 
+const RECOMMENDATION_WEIGHT: Record<OpportunityRecommendation, number> = {
+  apply_now: 5,
+  cold_email: 4,
+  enrich_first: 3,
+  watch: 2,
+  discard: 1,
+};
+
+function sortJobsForDossier(jobs: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
+  return [...jobs].sort((left, right) => {
+    const recommendationDiff =
+      (RECOMMENDATION_WEIGHT[String(right.recommendation ?? "watch") as OpportunityRecommendation] ?? 0) -
+      (RECOMMENDATION_WEIGHT[String(left.recommendation ?? "watch") as OpportunityRecommendation] ?? 0);
+    if (recommendationDiff !== 0) return recommendationDiff;
+
+    const rightScore = Number(right.score ?? 0);
+    const leftScore = Number(left.score ?? 0);
+    if (rightScore !== leftScore) return rightScore - leftScore;
+
+    return String(left.title ?? "").localeCompare(String(right.title ?? ""));
+  });
+}
+
 export function buildCompanyDecisionSnapshot(
   company: Record<string, unknown>,
   jobs: Array<Record<string, unknown>>,
   directContactCount: number,
 ): CompanyDecisionSnapshot {
+  const rankedJobs = sortJobsForDossier(jobs);
   const openRoleCount = Number(company.open_role_count ?? jobs.length ?? 0);
   const startupScore = Number(company.startup_score ?? 0);
   const contactabilityScore = Number(company.contactability_score ?? 0);
@@ -38,7 +62,7 @@ export function buildCompanyDecisionSnapshot(
     recommendationReason = "The company currently has low reachability and weak hiring signal.";
   }
 
-  const topJob = jobs[0];
+  const topJob = rankedJobs[0];
   const pitchTheme = String(topJob?.pitch_theme ?? (startupScore >= 8 ? "startup_speed" : "generalist"));
   const pitchAngle = String(
     topJob?.pitch_angle ??
@@ -66,7 +90,8 @@ export function renderCompanyDossier(
   contacts: Array<Record<string, unknown>>,
 ): string {
   const directContactCount = contacts.filter((contact) => String(contact.email ?? "") || String(contact.linkedin_url ?? "")).length;
-  const snapshot = buildCompanyDecisionSnapshot(company, jobs, directContactCount);
+  const rankedJobs = sortJobsForDossier(jobs);
+  const snapshot = buildCompanyDecisionSnapshot(company, rankedJobs, directContactCount);
   return [
     `${String(company.name ?? "")}`,
     `Recommendation: ${snapshot.recommendation}`,
@@ -76,9 +101,9 @@ export function renderCompanyDossier(
     `Pitch theme: ${snapshot.pitchTheme}`,
     `Pitch angle: ${snapshot.pitchAngle}`,
     `Contacts found: ${directContactCount}`,
-    `Open roles tracked: ${jobs.length}`,
-    jobs.length
-      ? `Top roles: ${jobs.slice(0, 3).map((job) => `${String(job.title ?? "")} (${String(job.recommendation ?? "watch")})`).join("; ")}`
+    `Open roles tracked: ${rankedJobs.length}`,
+    rankedJobs.length
+      ? `Top roles: ${rankedJobs.slice(0, 3).map((job) => `${String(job.title ?? "")} (${String(job.recommendation ?? "watch")})`).join("; ")}`
       : "Top roles: none tracked",
   ].join("\n");
 }

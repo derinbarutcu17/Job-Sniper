@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { openDatabase } from "../src/db.js";
@@ -26,9 +27,51 @@ describe("cli", () => {
     expect(await runCli(["stats"], baseDir)).toContain("Jobs:");
   });
 
+  it("executes through the shell wrapper and prints help", () => {
+    const result = spawnSync("node", ["./scripts/run-sniper.mjs", "help"], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+    });
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("sniper <subcommand>");
+  });
+
+  it("fails through the shell wrapper for unknown commands", () => {
+    const result = spawnSync("node", ["./scripts/run-sniper.mjs", "nonsense"], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("Unknown command: nonsense");
+  });
+
   it("rejects invalid draft ids", async () => {
     const baseDir = makeTempDir();
     await expect(runCli(["draft", "nope"], baseDir)).rejects.toThrow("draft requires a numeric job ID");
+  });
+
+  it("rejects disabled lanes from the CLI", async () => {
+    const baseDir = makeTempDir();
+    fs.writeFileSync(
+      path.join(baseDir, "config.json"),
+      JSON.stringify(
+        {
+          lanes: {
+            disabled_jobs: {
+              label: "Disabled",
+              type: "job",
+              enabled: false,
+              queries: { en: ["disabled"], tr: [] },
+              keywords: ["disabled"],
+            },
+          },
+        },
+        null,
+        2,
+      ),
+    );
+
+    await expect(runCli(["run", "--lane", "disabled_jobs"], baseDir)).rejects.toThrow("Invalid lane: disabled_jobs");
   });
 
   it("supports v2 triage and experiments flows", async () => {

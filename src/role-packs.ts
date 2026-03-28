@@ -3,12 +3,12 @@ import { normalizeText } from "./lib/text.js";
 
 const DEFAULT_TITLE_FAMILIES: RolePackTitleFamily[] = [
   { family: "Product Designer", terms: ["product designer", "ürün tasarımcısı", "product design"] },
-  { family: "UI/UX Designer", terms: ["ui/ux designer", "ux designer", "ui designer", "ux", "ui"] },
-  { family: "Design Engineer", terms: ["design engineer", "creative technologist"] },
+  { family: "UI/UX Designer", terms: ["ui/ux designer", "ux/ui designer", "ux designer", "ui designer", "visual designer"] },
+  { family: "Design Engineer", terms: ["design engineer", "creative technologist", "design technologist", "design systems engineer"] },
   { family: "Frontend Engineer", terms: ["frontend engineer", "front-end engineer", "react developer"] },
   { family: "AI Engineer", terms: ["ai engineer", "ml engineer", "llm engineer"] },
-  { family: "Automation Engineer", terms: ["automation engineer", "agent engineer"] },
-  { family: "GenAI Product Builder", terms: ["genai", "agent workflows", "ai product"] },
+  { family: "Automation Engineer", terms: ["automation engineer", "agent engineer", "agent workflow builder"] },
+  { family: "GenAI Product Builder", terms: ["genai", "agent workflows", "ai product", "ai product engineer"] },
 ];
 
 export const builtInRolePacks: Record<LaneId, LaneConfig> = {

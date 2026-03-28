@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "claw-sniper",
+      "name": "job-sniper",
       "devDependencies": {
         "@types/bun": "latest",
       },

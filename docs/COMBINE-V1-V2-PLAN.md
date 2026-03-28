@@ -6,8 +6,8 @@ Create one production repo that preserves every working V1 behavior and every wo
 
 Current repo paths:
 
-- V1 repo: `/Users/derin/Desktop/CODING/Job sniper/claw-job-sniper`
-- V2 repo: `/Users/derin/Desktop/CODING/Job sniper/derinbarutcu17-job-sniper-v2`
+- Canonical repo: `/Users/derin/Desktop/CODING/Job sniper`
+- Archived legacy source: `/Users/derin/Desktop/CODING/Job sniper/archive/legacy-source`
 
 ## Current state
 
@@ -108,14 +108,11 @@ Decide one package identity and stick to it.
 
 Recommendation:
 
-- keep the repo folder name as `derinbarutcu17-job-sniper-v2` during integration
+- keep the repo folder name as `Job sniper`
 - keep the skill command as `/sniper`
-- change `package.json` name to the final intended production name only once, at the end
+- keep the package identity aligned with `job-sniper`
 
-Avoid carrying both:
-
-- `claw-job-sniper`
-- `job-sniper-v1`
+Avoid carrying old nested repo names in active docs or runtime paths.
 
 Pick one final package name before release.
 
@@ -187,4 +184,3 @@ The cleanest combined Job Sniper is:
 - one final package name chosen after regression passes
 
 That path keeps the most capability with the least risk.
-

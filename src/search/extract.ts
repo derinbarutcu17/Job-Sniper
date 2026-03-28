@@ -44,9 +44,21 @@ function contactFromLink(link: string, sourceUrl: string, pageType: ContactCandi
   };
 }
 
+function extractExplicitEmails(text: string): string[] {
+  const emails = new Set<string>();
+  const pattern = /(?:^|[^A-Z0-9._%+-])([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})(?![A-Z0-9._%+-])/gi;
+  for (const match of text.matchAll(pattern)) {
+    const email = match[1]?.trim();
+    if (email) {
+      emails.add(email);
+    }
+  }
+  return [...emails];
+}
+
 export function buildPageRecord(url: string, html: string, provider: string, sourceType: PageRecord["sourceType"]): PageRecord {
   const $ = cheerio.load(html);
-  const text = $("body").text().replace(/\s+/g, " ").trim();
+  const text = $("body").text().replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/\s+/g, " ").trim();
   return {
     url,
     normalizedUrl: normalizeUrl(url),
@@ -99,8 +111,8 @@ export function extractContacts(page: PageRecord): ContactCandidate[] {
     }
   });
 
-  for (const match of page.text.matchAll(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi)) {
-    const email = match[0];
+  const rawText = page.html.replace(/<[^>]+>/g, " ");
+  for (const email of extractExplicitEmails(rawText)) {
     const lower = email.toLowerCase();
     const kind: ContactCandidate["kind"] =
       lower.includes("careers") || lower.includes("jobs") ? "careers_email" :
@@ -208,12 +220,17 @@ export function parseJsonLdListings(page: PageRecord, lane: SearchLane, contacts
 export function parseCareerHub(page: PageRecord, lane: SearchLane): string[] {
   const $ = cheerio.load(page.html);
   const jobUrls = new Set<string>();
+  const pageDomain = domainFromUrl(page.url);
   $("a[href]").each((_, element) => {
     const href = $(element).attr("href") ?? "";
     const text = $(element).text().trim();
-    if (/(job|career|role|apply|designer|engineer)/i.test(`${href} ${text}`)) {
-      jobUrls.add(new URL(href, page.url).toString());
-    }
+    if (!/(job|career|role|apply|designer|engineer|product|developer|architect|manager|intern)/i.test(`${href} ${text}`)) return;
+    const resolved = new URL(href, page.url).toString();
+    const resolvedDomain = domainFromUrl(resolved);
+    if (resolvedDomain && pageDomain && resolvedDomain !== pageDomain) return;
+    if (/(about|team|contact|press|blog|culture|privacy|legal|imprint)/i.test(resolved)) return;
+    if (/(about|team|contact|press|blog|culture|privacy|legal|imprint)/i.test(text)) return;
+    jobUrls.add(resolved);
   });
   return [...jobUrls].filter((url) => url !== page.url).slice(0, 30);
 }

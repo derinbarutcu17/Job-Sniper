@@ -1,3 +1,5 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { getBaseDir } from "./lib/paths.js";
 import { createApp } from "./app.js";
 import { loadConfig } from "./config.js";
@@ -38,10 +40,10 @@ function help(): string {
 function parseLane(input: string | undefined, baseDir: string): SearchLane | undefined {
   if (!input) return undefined;
   const config = loadConfig(baseDir);
-  if (config.lanes[input]) {
+  if (config.lanes[input]?.enabled) {
     return input;
   }
-  throw new Error(`Invalid lane: ${input}. Configured lanes: ${Object.keys(config.lanes).join(", ")}`);
+  throw new Error(`Invalid lane: ${input}. Configured enabled lanes: ${Object.entries(config.lanes).filter(([, lane]) => lane.enabled).map(([lane]) => lane).join(", ")}`);
 }
 
 export async function runCli(argv: string[], baseDir = getBaseDir()): Promise<string> {
@@ -242,7 +244,13 @@ export async function runCli(argv: string[], baseDir = getBaseDir()): Promise<st
   throw new Error(`Unknown command: ${command}\n\n${help()}`);
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+const executedPath = process.argv[1] ? path.basename(process.argv[1]) : "";
+const directExecution =
+  (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) ||
+  executedPath === "cli.ts" ||
+  executedPath === "cli.js";
+
+if (directExecution) {
   runCli(process.argv.slice(2))
     .then((output) => {
       process.stdout.write(`${output}\n`);

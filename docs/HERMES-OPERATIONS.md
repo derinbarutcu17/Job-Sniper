@@ -19,15 +19,11 @@ This is not for:
 
 ## Canonical repo path
 
-Use the combined repo only after merge is complete.
+Use the repo that contains this file. The cron wrapper is now path-relative, so it no longer depends on a hardcoded local folder name.
 
-Current integration repo:
+Repo root:
 
-- `/Users/derin/Desktop/CODING/Job sniper/derinbarutcu17-job-sniper-v2`
-
-Current V1 fallback:
-
-- `/Users/derin/Desktop/CODING/Job sniper/claw-job-sniper`
+- the parent directory of `scripts/hermes-daily-run.sh`
 
 Hermes should run the V2 repo only after the merge checklist in `docs/COMBINE-V1-V2-PLAN.md` is complete.
 
@@ -61,7 +57,7 @@ If cron launches the job directly, make sure the script exports them or sources 
 Run once:
 
 ```bash
-cd "/Users/derin/Desktop/CODING/Job sniper/derinbarutcu17-job-sniper-v2"
+cd "/absolute/path/to/this/repo"
 npm install
 npm run typecheck
 npm test
@@ -186,8 +182,8 @@ Reason:
 Example:
 
 ```cron
-0 9 * * * /bin/zsh "/Users/derin/Desktop/CODING/Job sniper/derinbarutcu17-job-sniper-v2/scripts/hermes-daily-run.sh" >> "/Users/derin/Desktop/CODING/Job sniper/derinbarutcu17-job-sniper-v2/data/cron.log" 2>&1
-30 16 * * * /bin/zsh "/Users/derin/Desktop/CODING/Job sniper/derinbarutcu17-job-sniper-v2/scripts/hermes-daily-run.sh" >> "/Users/derin/Desktop/CODING/Job sniper/derinbarutcu17-job-sniper-v2/data/cron.log" 2>&1
+0 9 * * * /bin/zsh "/absolute/path/to/this/repo/scripts/hermes-daily-run.sh" >> "/absolute/path/to/this/repo/data/cron.log" 2>&1
+30 16 * * * /bin/zsh "/absolute/path/to/this/repo/scripts/hermes-daily-run.sh" >> "/absolute/path/to/this/repo/data/cron.log" 2>&1
 ```
 
 ## Recommended cron wrapper behavior
@@ -337,4 +333,3 @@ Use one wrapper script plus cron.
 Do not let cron call a long chain of inline commands directly.
 
 That setup is the most stable, debuggable, and Hermes-friendly way to run Job Sniper every day.
-

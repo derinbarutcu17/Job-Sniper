@@ -26,6 +26,7 @@ export function inferRoute(
   const startupish = looksStartupish(listing) || startupFit > 6;
   const hasAtsPage = listing.sourceType === "ats" || includesAny(`${listing.url} ${listing.applyUrl}`, ["greenhouse", "lever", "ashby", "workable", "smartrecruiters", "personio", "wellfound"]);
   const highConfidenceContacts = listing.publicContacts.some((contact) => contact.confidence === "high");
+  const weakSurface = !listing.isRealJobPage || listing.parseConfidence < 0.5 || listing.sourceConfidence < 0.55;
 
   let recommendedRoute: RecommendedRoute = "no_action";
   let routeConfidence = 0.2;
@@ -53,17 +54,33 @@ export function inferRoute(
     routeRationale = "The company looks more interesting than the current role surface, so company-level monitoring is stronger than immediate application.";
   }
 
+  if (
+    weakSurface &&
+    (recommendedRoute === "ats_only" || recommendedRoute === "founder_or_team_reachout") &&
+    !directEmail
+  ) {
+    recommendedRoute = founderSurface || startupish ? "watch_company" : "no_action";
+    routeConfidence = founderSurface || startupish ? 0.42 : 0.25;
+    routeRationale = founderSurface || startupish
+      ? "The page is weak, so company-level watching is safer than trusting the role surface."
+      : "The page is too weak to support a confident route yet.";
+  } else if (weakSurface) {
+    routeConfidence = Math.max(0.2, routeConfidence - 0.18);
+    routeRationale = `${routeRationale} Confidence is reduced because the page surface is weak.`;
+  }
+
   const outreachLeverageScore =
     (directEmail ? 35 : 0) +
     (highConfidenceContacts ? 20 : 0) +
     (founderSurface ? 15 : 0) +
     (startupish ? 15 : 0) +
-    (score >= 65 ? 15 : score >= 50 ? 8 : 0);
+    (score >= 65 ? 15 : score >= 50 ? 8 : 0) -
+    (weakSurface ? 10 : 0);
 
   return {
     recommendedRoute,
     routeConfidence,
     routeRationale,
-    outreachLeverageScore: Math.min(100, outreachLeverageScore),
+    outreachLeverageScore: Math.max(0, Math.min(100, outreachLeverageScore)),
   };
 }

@@ -2,7 +2,7 @@ import fs from "node:fs";
 import { google } from "googleapis";
 import { loadConfig } from "./config.js";
 import { getStoredSpreadsheetId, openDatabase, saveSpreadsheetState, updateJobManualFields } from "./db.js";
-import type { JobRecord } from "./types.js";
+import type { JobRecord, SheetSyncResult } from "./types.js";
 
 type Row = Record<string, string>;
 
@@ -11,6 +11,8 @@ export interface SheetGateway {
   ensureSheet(spreadsheetId: string, title: string): Promise<void>;
   readSheet(spreadsheetId: string, title: string): Promise<Row[]>;
   writeSheet(spreadsheetId: string, title: string, rows: Row[], headers?: string[]): Promise<void>;
+  listSheetTitles?(spreadsheetId: string): Promise<string[]>;
+  deleteSheet?(spreadsheetId: string, title: string): Promise<void>;
 }
 
 const JOB_HEADERS = [
@@ -179,6 +181,26 @@ export class GoogleSheetGateway implements SheetGateway {
       spreadsheetId,
       requestBody: {
         requests: [{ addSheet: { properties: { title } } }],
+      },
+    });
+  }
+
+  async listSheetTitles(spreadsheetId: string): Promise<string[]> {
+    const spreadsheet = await this.sheets.spreadsheets.get({ spreadsheetId });
+    return (spreadsheet.data.sheets ?? [])
+      .map((sheet) => sheet.properties?.title)
+      .filter((title): title is string => Boolean(title));
+  }
+
+  async deleteSheet(spreadsheetId: string, title: string): Promise<void> {
+    const spreadsheet = await this.sheets.spreadsheets.get({ spreadsheetId });
+    const sheet = (spreadsheet.data.sheets ?? []).find((entry) => entry.properties?.title === title);
+    const sheetId = sheet?.properties?.sheetId;
+    if (sheetId === undefined) return;
+    await this.sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: {
+        requests: [{ deleteSheet: { sheetId } }],
       },
     });
   }
@@ -446,19 +468,19 @@ function dailyJobTabs(
     }));
 }
 
-export async function syncSheets(baseDir: string, gateway: SheetGateway = new GoogleSheetGateway()) {
+export async function syncSheets(baseDir: string, gateway: SheetGateway = new GoogleSheetGateway(), runId?: number) {
   const { db } = openDatabase(baseDir);
   const settings = resolveSheetSettings(baseDir);
   const spreadsheetId =
     settings.spreadsheetId ||
     getStoredSpreadsheetId(db) ||
-    (settings.createIfMissing ? await gateway.createSpreadsheet("Claw Job Sniper", settings.folderId) : "");
+    (settings.createIfMissing ? await gateway.createSpreadsheet("Job Sniper", settings.folderId) : "");
 
   if (!spreadsheetId) {
     throw new Error("No spreadsheet ID configured and sheet auto-create is disabled.");
   }
 
-  for (const title of Object.values(settings.tabs)) {
+  for (const title of [settings.tabs.jobs, settings.tabs.companies, settings.tabs.contacts, settings.tabs.runMetrics]) {
     await gateway.ensureSheet(spreadsheetId, title);
   }
 
@@ -470,17 +492,37 @@ export async function syncSheets(baseDir: string, gateway: SheetGateway = new Go
   await gateway.writeSheet(spreadsheetId, settings.tabs.contacts, contactRows(db), [...CONTACT_HEADERS]);
   await gateway.writeSheet(spreadsheetId, settings.tabs.runMetrics, runMetricRows(db), [...RUN_METRIC_HEADERS]);
 
-  for (const tab of dailyJobTabs(db, settings.tabs.dailyJobsPrefix ?? "Jobs ")) {
+  const dailyTabs = dailyJobTabs(db, settings.tabs.dailyJobsPrefix ?? "Jobs ");
+  for (const tab of dailyTabs) {
     await gateway.ensureSheet(spreadsheetId, tab.title);
     await gateway.writeSheet(spreadsheetId, tab.title, tab.rows, [...JOB_HEADERS]);
   }
 
-  saveSpreadsheetState(db, spreadsheetId, { lastSyncAt: new Date().toISOString() });
+  if (gateway.listSheetTitles && gateway.deleteSheet) {
+    const existingTitles = await gateway.listSheetTitles(spreadsheetId);
+    const liveDailyTitles = new Set(dailyTabs.map((tab) => tab.title));
+    const jobsPrefix = settings.tabs.dailyJobsPrefix ?? "Jobs ";
+    for (const title of existingTitles) {
+      if (title === settings.tabs.jobs) continue;
+      if (title.startsWith(jobsPrefix) && !liveDailyTitles.has(title)) {
+        await gateway.deleteSheet(spreadsheetId, title);
+      }
+    }
+  }
+
+  saveSpreadsheetState(db, spreadsheetId, {
+    lastSyncAt: new Date().toISOString(),
+    meta: {
+      lastRunId: runId ?? null,
+      lastJobsCount: mergedJobs.length,
+    },
+  });
   return {
     spreadsheetId,
     url: `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`,
     jobs: mergedJobs.length,
-  };
+    runId: runId ?? null,
+  } satisfies SheetSyncResult;
 }
 
 export async function pullSheets(baseDir: string, gateway: SheetGateway = new GoogleSheetGateway()) {
@@ -497,14 +539,16 @@ export async function pullSheets(baseDir: string, gateway: SheetGateway = new Go
     if (!row.canonical_key) {
       continue;
     }
-    updateJobManualFields(db, row.canonical_key, {
+    const updated = updateJobManualFields(db, row.canonical_key, {
       manual_status: row.manual_status,
       owner_notes: row.owner_notes,
       priority: row.priority,
       outreach_state: row.outreach_state,
       manual_contact_override: row.manual_contact_override,
     });
-    pulled += 1;
+    if (updated) {
+      pulled += 1;
+    }
   }
 
   saveSpreadsheetState(db, spreadsheetId, { lastPullAt: new Date().toISOString() });

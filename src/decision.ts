@@ -44,6 +44,11 @@ export function buildDecisionSnapshot(
   if (breakdown.negatives.some((entry) => /experience ask too high/i.test(entry))) explanation.why_discard.push("The seniority ask looks too high.");
 
   const seniorityPenalty = breakdown.negatives.some((entry) => /experience ask too high/i.test(entry));
+  const outboundRoute =
+    route.recommendedRoute === "direct_email_first" ||
+    route.recommendedRoute === "founder_or_team_reachout" ||
+    route.recommendedRoute === "ats_plus_cold_email";
+  const weakSurface = !listing.isRealJobPage || listing.parseConfidence < 0.5 || listing.sourceConfidence < 0.55;
 
   let recommendation: JobDecisionSnapshot["recommendation"] = "watch";
   let recommendationReason = "Worth keeping visible, but not yet a top-priority pursuit.";
@@ -59,17 +64,18 @@ export function buildDecisionSnapshot(
     recommendation = "apply_now";
     recommendationReason = explanation.why_apply_now[0] ?? "The role is strong enough to pursue immediately.";
   } else if (
-    score >= 45 &&
-    (!listing.publicContacts.length || !listing.isRealJobPage || route.recommendedRoute === "watch_company")
-  ) {
-    recommendation = "enrich_first";
-    recommendationReason = explanation.why_enrich_first[0] ?? "This looks promising, but the route needs more validation first.";
-  } else if (
     score >= 55 &&
-    (route.recommendedRoute === "direct_email_first" || route.recommendedRoute === "founder_or_team_reachout" || route.recommendedRoute === "ats_plus_cold_email")
+    outboundRoute &&
+    (!weakSurface || score >= 70)
   ) {
     recommendation = "cold_email";
     recommendationReason = explanation.why_cold_email[0] ?? "Outbound contact looks stronger than passive waiting.";
+  } else if (
+    score >= 45 &&
+    (!listing.publicContacts.length || weakSurface || route.recommendedRoute === "watch_company")
+  ) {
+    recommendation = "enrich_first";
+    recommendationReason = explanation.why_enrich_first[0] ?? "This looks promising, but the route needs more validation first.";
   } else if (score >= 40 || breakdown.startupFit > 0) {
     recommendation = "watch";
     recommendationReason = explanation.why_watch[0] ?? "The company may be worth monitoring even if this exact role is not.";

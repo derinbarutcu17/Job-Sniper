@@ -121,6 +121,36 @@ function mergeConfig(base: SniperConfig, overrides: ConfigOverrides): SniperConf
   };
 }
 
+function sanitizeConfig(config: SniperConfig): SniperConfig {
+  const validLaneIds = new Set(Object.keys(config.lanes));
+  const sanitizedLaneBlacklists = Object.fromEntries(
+    Object.entries(config.blacklist.lanes).filter(([lane]) => validLaneIds.has(lane)),
+  );
+
+  const sanitizedLanes = Object.fromEntries(
+    Object.entries(config.lanes).map(([laneId, lane]) => [
+      laneId,
+      {
+        ...lane,
+        type: lane.type === "company_watch" ? "company_watch" : "job",
+        queries: {
+          tr: lane.queries?.tr ?? [],
+          en: lane.queries?.en ?? [],
+        },
+      },
+    ]),
+  ) as SniperConfig["lanes"];
+
+  return {
+    ...config,
+    lanes: sanitizedLanes,
+    blacklist: {
+      ...config.blacklist,
+      lanes: sanitizedLaneBlacklists,
+    },
+  };
+}
+
 function migrateLegacyConfig(raw: Record<string, unknown>): ConfigOverrides {
   const search = (raw.search ?? {}) as Record<string, unknown>;
   const legacySources = Array.isArray(raw.sources) ? (raw.sources as Array<Record<string, unknown>>) : [];
@@ -195,9 +225,11 @@ export function loadConfig(baseDir: string): SniperConfig {
     typeof parsed.lanes === "object" &&
     parsed.lanes !== null;
 
-  return looksModern
-    ? mergeConfig(defaultConfig, normalizeModernConfig(parsed))
-    : mergeConfig(defaultConfig, migrateLegacyConfig(parsed));
+  return sanitizeConfig(
+    looksModern
+      ? mergeConfig(defaultConfig, normalizeModernConfig(parsed))
+      : mergeConfig(defaultConfig, migrateLegacyConfig(parsed)),
+  );
 }
 
 export function saveConfig(baseDir: string, config: SniperConfig): void {

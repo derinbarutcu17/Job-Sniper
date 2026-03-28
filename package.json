@@ -1,12 +1,12 @@
 {
-  "name": "claw-job-sniper",
+  "name": "job-sniper",
   "version": "1.0.0",
   "private": true,
   "type": "module",
   "description": "OpenClaw-native job intelligence skill for role discovery, company research, and public-contact outreach workflows.",
   "scripts": {
     "sniper": "node ./scripts/run-sniper.mjs",
-    "test": "vitest run",
+    "test": "vitest run test/*.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

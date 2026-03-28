@@ -17,7 +17,7 @@ import { buildDecisionSnapshot } from "../decision.js";
 import { loadProfile } from "../profile.js";
 import { getDefaultCompanyWatchLane, isCompanyWatchLane } from "../role-packs.js";
 import { normalizeTitleFamily, scoreListing } from "../scoring.js";
-import type { CompanyRecordInput, ContactCandidate, Dependencies, DiscoveryCandidate, ListingCandidate, RunSummary, SearchLane } from "../types.js";
+import type { CompanyRecordInput, ContactCandidate, Dependencies, DiscoveryCandidate, ListingCandidate, PipelineContext, RunSummary, SearchLane } from "../types.js";
 import { crawlUrl, discoverFromAtsBoard, expandSearchResult } from "./ats.js";
 import { classifyCandidate } from "./classify.js";
 import { gatherSearchCandidates } from "./frontier.js";
@@ -28,6 +28,7 @@ import { getSearchProviders } from "./web.js";
 export interface RunDiscoveryOptions {
   lane?: SearchLane;
   companyWatchOnly?: boolean;
+  context?: PipelineContext;
 }
 
 function sourceBreakdownAccumulator(sourceBreakdown: Record<string, number>, key: string, amount = 1): void {
@@ -63,6 +64,19 @@ function buildCompanyInput(
     ...(/hiring|join us|open roles|careers|jobs/i.test(pageText) ? ["hiring_page"] : []),
     ...(contacts.length ? ["public_contact_surface"] : []),
   ];
+  const hasConcreteRoleSignal = /job opening|open roles|open positions|view jobs|apply now|we're hiring|we are hiring/i.test(pageText);
+  const directEmailCount = contacts.filter((contact) => Boolean(contact.email)).length;
+  const founderSurfaceCount = contacts.filter((contact) => contact.kind === "team_page" || contact.kind === "linkedin_person").length;
+  const startupScore = startupSignals.length * 8;
+  const companyFitScore = isCompanyWatchLane(config, candidate.lane) ? 8 : 6;
+  const hiringSignalScore = hiringSignals.length * 4 + (hasConcreteRoleSignal ? 4 : 0);
+  const contactabilityScore =
+    directEmailCount > 0
+      ? (contacts.some((contact) => contact.confidence === "high") ? 12 : 8)
+      : founderSurfaceCount > 0
+        ? 4
+        : 0;
+
   return {
     canonicalKey: canonicalCompanyKey(domain || candidate.title || "unknown", domain),
     name: candidate.title.replace(/\s*[|\-].*$/, "").trim() || domain || "Unknown",
@@ -85,11 +99,11 @@ function buildCompanyInput(
     sizeBand: "",
     stageText: startupSignals.length ? "startup signal" : "",
     remotePolicy: /remote|uzaktan|hybrid/i.test(pageText) ? "remote-friendly" : "",
-    openRoleCount: /jobs|careers|open roles/i.test(pageText) ? 1 : 0,
-    startupScore: startupSignals.length * 8,
-    companyFitScore: isCompanyWatchLane(config, candidate.lane) ? 10 : 6,
-    hiringSignalScore: hiringSignals.length * 4,
-    contactabilityScore: contacts.some((contact) => contact.confidence === "high") ? 12 : contacts.length ? 6 : 0,
+    openRoleCount: hasConcreteRoleSignal ? 1 : 0,
+    startupScore,
+    companyFitScore,
+    hiringSignalScore,
+    contactabilityScore,
     isStartupCandidate: startupSignals.length > 0,
     lastSeenAt: new Date().toISOString(),
   };
@@ -102,6 +116,7 @@ async function collectConfiguredListings(
   sourceBreakdown: Record<string, number>,
 ): Promise<ListingCandidate[]> {
   const listings: ListingCandidate[] = [];
+  const context = options.context;
   for (const source of config.sources.rss) {
     if (options.lane && options.lane !== "company_watch" && options.lane !== undefined) {
       // RSS feeds are still useful across job lanes, so keep them unless user requests company-only mode.
@@ -112,6 +127,7 @@ async function collectConfiguredListings(
       sourceBreakdownAccumulator(sourceBreakdown, "rss", discovered.length);
     } catch {
       sourceBreakdownAccumulator(sourceBreakdown, "rss_failed", 1);
+      context?.warnings.push(`RSS source failed: ${source.name}`);
     }
   }
 
@@ -125,6 +141,7 @@ async function collectConfiguredListings(
       sourceBreakdownAccumulator(sourceBreakdown, "ats", discovered.length);
     } catch {
       sourceBreakdownAccumulator(sourceBreakdown, "ats_failed", 1);
+      context?.warnings.push(`ATS board failed: ${board.name}`);
     }
   }
 
@@ -140,11 +157,15 @@ export async function runDiscovery(
   const config = loadConfig(baseDir);
   const { profile } = loadProfile(baseDir);
   const sourceBreakdown: Record<string, number> = {};
+  const context = options.context;
 
   const providers = getSearchProviders();
   const searchQueries = filterQueries(baseDir, options.lane, options.companyWatchOnly);
   const gathered = await gatherSearchCandidates(searchQueries, providers, deps, config);
   Object.entries(gathered.sourceBreakdown).forEach(([key, value]) => sourceBreakdownAccumulator(sourceBreakdown, key, value));
+  if (context) {
+    context.sourceBreakdown = sourceBreakdown;
+  }
 
   const directListings = await collectConfiguredListings(config, deps, options, sourceBreakdown);
 
@@ -196,19 +217,19 @@ export async function runDiscovery(
         description: listing.description,
         sourceUrls: listing.sourceUrls,
         publicContacts: listing.publicContacts.map((contact) => contact.email || contact.linkedinUrl || contact.sourceUrl),
-        startupSignals: [/startup|early stage|growth stage|actively hiring/i.test(listing.description) ? "startup_language" : ""].filter(Boolean),
-        hiringSignals: [/actively hiring|jobs|hiring/i.test(listing.description) ? "hiring_language" : ""].filter(Boolean),
+        startupSignals: [/startup|early stage|growth stage|seed|series a|founding/i.test(listing.description) ? "startup_language" : ""].filter(Boolean),
+        hiringSignals: [/actively hiring|open roles|view jobs|we're hiring|we are hiring/i.test(listing.description) ? "hiring_language" : ""].filter(Boolean),
         founderNames: [],
         cities: listing.location ? [listing.location] : [],
         sizeBand: "",
-        stageText: /early stage|growth stage/i.test(listing.description) ? "startup signal" : "",
+        stageText: /early stage|growth stage|seed|series a|founding/i.test(listing.description) ? "startup signal" : "",
         remotePolicy: listing.workModel === "remote" ? "remote-friendly" : "",
-        openRoleCount: /job/i.test(listing.description) ? 1 : 0,
-        startupScore: /startup|early stage|growth stage/i.test(listing.description) ? 10 : 0,
+        openRoleCount: /open roles|view jobs|job opening|apply now|we're hiring|we are hiring/i.test(listing.description) ? 1 : 0,
+        startupScore: /startup|early stage|growth stage|seed|series a|founding/i.test(listing.description) ? 10 : 0,
         companyFitScore: 8,
-        hiringSignalScore: /actively hiring|jobs|hiring/i.test(listing.description) ? 8 : 0,
-        contactabilityScore: 0,
-        isStartupCandidate: /startup|early stage|growth stage/i.test(listing.description),
+        hiringSignalScore: /actively hiring|open roles|view jobs|we're hiring|we are hiring/i.test(listing.description) ? 8 : 0,
+        contactabilityScore: listing.publicContacts.some((contact) => contact.email) ? 8 : 0,
+        isStartupCandidate: /startup|early stage|growth stage|seed|series a|founding/i.test(listing.description),
         lastSeenAt: new Date().toISOString(),
       };
       upsertCompany(db, companyInput);
@@ -277,6 +298,7 @@ export async function runDiscovery(
       parsed += 1;
       return listings;
     } catch {
+      context?.warnings.push(`Search expansion failed for ${candidate.url}`);
       return [];
     }
   });
@@ -323,6 +345,7 @@ export async function runDiscovery(
 
         return { candidate, outcome, skipped: false as const };
       } catch (error) {
+        context?.errors.push(error instanceof Error ? error.message : String(error));
         markCandidateStatus(
           db,
           candidate.normalizedUrl,
@@ -403,6 +426,8 @@ export async function runDiscovery(
   }
 
   const summary = summarizeRun({
+    runId: context?.runId,
+    status: context?.errors.length ? "partial" : "succeeded",
     totalFound: totalDiscovered,
     totalNew,
     totalUpdated,
@@ -426,6 +451,8 @@ export async function runDiscovery(
       applyNowCount + coldEmailCount + enrichFirstCount + watchCount + discardCount
         ? totalOutreachLeverageScore / (applyNowCount + coldEmailCount + enrichFirstCount + watchCount + discardCount)
         : 0,
+    warnings: context?.warnings ?? [],
+    errors: context?.errors ?? [],
   });
 
   recordRunMetrics(db, summary, sourceBreakdown);

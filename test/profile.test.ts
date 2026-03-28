@@ -1,5 +1,8 @@
+import fs from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { deriveProfileSummary } from "../src/profile.js";
+import { deriveProfileSummary, onboardProfile } from "../src/profile.js";
+import { makeTempDir } from "./helpers.js";
 
 describe("profile seniority parsing", () => {
   it("treats explicit no-senior wording as junior target", () => {
@@ -17,5 +20,11 @@ describe("profile seniority parsing", () => {
     );
     expect(profile.targetSeniority).toBe("senior");
     expect(profile.allowStretchRoles).toBe(true);
+  });
+
+  it("rejects missing profile file paths instead of storing them as CV text", async () => {
+    const baseDir = makeTempDir();
+    await expect(onboardProfile(baseDir, "/no/such/file.pdf")).rejects.toThrow("Profile file was not found");
+    expect(fs.existsSync(path.join(baseDir, "profile", "cv.md"))).toBe(false);
   });
 });

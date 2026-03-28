@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# Claw Job Sniper: Standardized Setup Script
+# Job Sniper: Standardized Setup Script
 # Description: Installs all dependencies for the Agentic Job Discovery Engine.
 
 set -e
 
-echo "🚀 Starting Claw Job Sniper Setup..."
+echo "🚀 Starting Job Sniper Setup..."
 
 # 1. Check for Bun
 if ! command -v bun &> /dev/null; then

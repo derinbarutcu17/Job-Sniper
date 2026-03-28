@@ -16,7 +16,12 @@ function collectResults(
     const anchor = $(element).find(selectors.anchor).first();
     const title = anchor.text().trim();
     const url = normalizeUrl(anchor.attr("href") ?? "");
-    const snippet = summarizeToLine($(element).find(selectors.snippet).first().text().trim(), 220);
+    const snippetNode = $(element).find(selectors.snippet).first();
+    const snippetText =
+      snippetNode.text().trim() ||
+      anchor.parent().next().text().trim() ||
+      $(element).text().replace(title, "").trim();
+    const snippet = summarizeToLine(snippetText, 220);
     if (!title || !url) return;
     results.push({
       lane: query.lane,
@@ -43,7 +48,7 @@ export class DuckDuckGoProvider implements SearchProvider {
     const html = await response.text();
     return collectResults(html, query, this.name, {
       item: ".result",
-      anchor: ".result__title a",
+      anchor: ".result__title a, .result__a",
       snippet: ".result__snippet",
     });
   }

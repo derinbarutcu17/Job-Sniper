@@ -108,4 +108,38 @@ describe("decision layer", () => {
     );
     expect(decision.recommendation).toBe("enrich_first");
   });
+
+  it("prefers cold_email for strong founder-surface opportunities on real pages", () => {
+    const decision = buildDecisionSnapshot(
+      listing({
+        publicContacts: [],
+        sourceType: "page",
+      }),
+      profile,
+      72,
+      breakdown(),
+      "eligible",
+    );
+    expect(decision.recommendation).toBe("cold_email");
+    expect(decision.recommendedRoute).toBe("founder_or_team_reachout");
+  });
+
+  it("downgrades weak page surfaces to enrich_first instead of overcommitting", () => {
+    const decision = buildDecisionSnapshot(
+      listing({
+        publicContacts: [],
+        sourceType: "search",
+        isRealJobPage: false,
+        parseConfidence: 0.32,
+        sourceConfidence: 0.42,
+      }),
+      profile,
+      72,
+      breakdown(),
+      "eligible",
+    );
+    expect(decision.recommendation).toBe("enrich_first");
+    expect(decision.recommendedRoute).toBe("watch_company");
+    expect(decision.routeConfidence).toBeLessThan(0.6);
+  });
 });
